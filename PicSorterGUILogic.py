@@ -19,9 +19,11 @@ class RECT(ctypes.Structure):
 from lib.PicSorterGUILib import GetKoFolder, GetGazoFiles
 from lib.PicSorterGUIData import (
     load_config, save_config, calculate_file_hash,
-    load_vectors, save_vectors, ImageDataManager
+    load_vectors, save_vectors, ImageDataManager,
+    get_vector_data_info, load_analysis_cache, save_analysis_cache,
+    clear_vectors, clear_analysis_cache
 )
-from lib.PicSorterGUIAI import VectorEngine, VectorBatchProcessor
+from lib.PicSorterGUIAI import VectorEngine, VectorBatchProcessor, check_model_cached, download_model
 from lib.PicSorterGUIState import get_app_state
 
 from lib.PicSorterGUILogger import LoggerManager

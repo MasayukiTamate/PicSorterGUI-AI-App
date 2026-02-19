@@ -23,14 +23,16 @@ logger = get_logger(__name__)
 from PicSorterGUILogic import (
     load_config, save_config, ImageDataManager, PicController,
     calculate_file_hash, VectorBatchProcessor,
-    open_visual_sort_window
+    open_visual_sort_window, get_vector_data_info,
+    clear_vectors, clear_analysis_cache, check_model_cached
 )
 from lib.PicSorterGUILib import GetKoFolder, GetGazoFiles
 from lib.PicSorterGUIState import get_app_state
 from lib.config_defaults import (
-    MOVE_DESTINATION_OPTIONS,
+    MOVE_DESTINATION_OPTIONS, AI_MODELS, DEFAULT_AI_MODEL,
 )
-from lib.PicSorterGUIWidgets import SplashWindow
+from lib.PicSorterGUIWidgets import SplashWindow, ModelSelectDialog
+from lib.PicSorterGUIAI import VectorEngine
 
 # --- アプリケーション状態の初期化 ---
 app_state = get_app_state()
@@ -53,8 +55,49 @@ def close_splash():
             koRoot.attributes("-topmost", True)
     except:
         pass
+    # スプラッシュ後にモデル確認
+    koRoot.after(100, check_model_on_startup)
 
 koRoot.after(1500, close_splash)
+
+
+def check_model_on_startup():
+    """起動時にAIモデルがダウンロード済みか確認し、なければ選択ダイアログを表示"""
+    current_model = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+    # VectorEngine にモデルキーを設定（まだインスタンスは作らない）
+    VectorEngine._current_model_key = current_model
+    if not check_model_cached(current_model):
+        open_model_select_dialog()
+
+
+def open_model_select_dialog():
+    """モデル選択ダイアログを開く"""
+    current_model = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+
+    def on_model_selected(new_key):
+        old_key = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+        if new_key != old_key:
+            if messagebox.askyesno("確認",
+                    "モデルを変更すると既存のベクトルデータと分析キャッシュがリセットされます。\n\nよろしいですか？"):
+                clear_vectors()
+                clear_analysis_cache()
+                VectorEngine.reset_instance()
+                logger.info(f"AIモデル変更: {old_key} -> {new_key}")
+            else:
+                return
+
+        # 設定を保存
+        cfg = app_state.to_dict()
+        cfg["settings"]["ai_model"] = new_key
+        save_config(cfg["last_folder"], cfg.get("geometries", {}), cfg["settings"])
+        app_state.from_dict(cfg)
+
+        # VectorEngine をリセットして新モデルで初期化準備
+        VectorEngine.reset_instance()
+
+        update_vector_info()
+
+    ModelSelectDialog(koRoot, current_model, on_select=on_model_selected)
 
 # --- 設定の読み込みと初期化 ---
 try:
@@ -111,8 +154,11 @@ def refresh_ui(new_path):
     pic_controller.SetFolder(DEFOLDER)
 
     koRoot.title("PicSorterGUI - " + DEFOLDER)
-    lbl_folder_path.config(text=DEFOLDER)
     save_config(DEFOLDER)
+    try:
+        update_vector_info()
+    except Exception:
+        pass
 
 
 # --- メイン処理 ---
@@ -284,6 +330,7 @@ def run_vector_update():
     processor.start()
 
 config_menu.add_command(label="AIベクトルを更新・作成", command=run_vector_update)
+config_menu.add_command(label="AIモデル変更...", command=open_model_select_dialog)
 
 
 def run_visual_sort():
@@ -302,22 +349,29 @@ def run_visual_sort():
 
 # --- メインウィンドウ UI (シンプル構成) ---
 
-# フォルダパス表示
-lbl_folder_path = tk.Label(koRoot, text=DEFOLDER, font=("MS Gothic", 9), fg="#555555",
-                           anchor="w", padx=8, pady=4, relief="sunken", bg="#f8f8f8")
-lbl_folder_path.pack(fill=tk.X, padx=8, pady=(8, 4))
-
-# フォルダ選択ボタン
-btn_open_folder = tk.Button(koRoot, text="フォルダを開く", command=lambda: refresh_ui(safe_select_folder()),
-                            font=("MS Gothic", 10), relief="groove", cursor="hand2", height=1)
-btn_open_folder.pack(fill=tk.X, padx=8, pady=(0, 8))
-
 # AI Visual Sort ボタン (メインアクション)
 btn_visual_sort = tk.Button(koRoot, text="AI Visual Sort\n(視覚的仕分け)",
                             command=run_visual_sort,
                             bg="#e8f0fe", font=("MS Gothic", 18, "bold"),
                             relief="groove", cursor="hand2", height=3)
-btn_visual_sort.pack(fill=tk.BOTH, padx=8, pady=(0, 8), expand=True)
+btn_visual_sort.pack(fill=tk.BOTH, padx=8, pady=(8, 4), expand=True)
+
+# ベクトルデータサイズ表示
+lbl_vector_info = tk.Label(koRoot, text="", font=("MS Gothic", 9), fg="#888888", anchor="center")
+lbl_vector_info.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+def update_vector_info():
+    try:
+        size_bytes, count = get_vector_data_info()
+        if size_bytes == 0:
+            lbl_vector_info.config(text="AIデータ: なし")
+        else:
+            size_mb = size_bytes / (1024 * 1024)
+            lbl_vector_info.config(text=f"AIデータ: {size_mb:.1f} MB ({count:,}件)")
+    except Exception:
+        lbl_vector_info.config(text="AIデータ: 取得失敗")
+
+update_vector_info()
 
 
 # --- ウィンドウ初期設定 ---
@@ -337,7 +391,6 @@ try:
     app_state.set_current_folders(folders)
     data_manager.SetGazoFiles(files, DEFOLDER)
     koRoot.title("PicSorterGUI - " + DEFOLDER)
-    lbl_folder_path.config(text=DEFOLDER)
 except Exception as e:
     logger.error(f"初期フォルダ読み込みエラー: {e}")
 

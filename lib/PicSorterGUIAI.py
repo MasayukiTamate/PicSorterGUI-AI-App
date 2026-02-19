@@ -1,5 +1,5 @@
 '''
-PicSorterGUI AI (MobileNetV3) を使用した画像ベクトル化ロジック
+PicSorterGUI AI 複数モデル対応の画像ベクトル化ロジック
 '''
 from PIL import Image
 import torch
@@ -15,54 +15,144 @@ import time
 from lib.PicSorterGUIData import load_vectors, save_vectors, calculate_file_hash
 from lib.PicSorterGUILib import GetGazoFiles
 from lib.PicSorterGUIExceptions import FileHashError
+from lib.config_defaults import AI_MODELS, DEFAULT_AI_MODEL
 
 
 logger = LoggerManager.get_logger(__name__)
 
 
+def _get_torch_cache_dir():
+    """torchvision の重みキャッシュディレクトリを取得"""
+    torch_home = os.environ.get('TORCH_HOME', os.path.join(os.path.expanduser('~'), '.cache', 'torch'))
+    return os.path.join(torch_home, 'hub', 'checkpoints')
+
+
+def check_model_cached(model_key):
+    """指定モデルの重みがローカルにキャッシュされているか確認"""
+    if model_key not in AI_MODELS:
+        return False
+    weight_file = AI_MODELS[model_key]["weight_file"]
+    cache_dir = _get_torch_cache_dir()
+    return os.path.exists(os.path.join(cache_dir, weight_file))
+
+
+def download_model(model_key, progress_callback=None):
+    """指定モデルの重みをダウンロードする"""
+    if model_key not in AI_MODELS:
+        raise AIModelError(f"Unknown model: {model_key}")
+
+    try:
+        if progress_callback:
+            progress_callback("モデルをダウンロード中...")
+
+        if model_key == "mobilenet_v3_small":
+            models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
+        elif model_key == "mobilenet_v3_large":
+            models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
+        elif model_key == "resnet50":
+            models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        elif model_key == "efficientnet_b0":
+            models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+
+        if progress_callback:
+            progress_callback("ダウンロード完了")
+
+        logger.info(f"モデルダウンロード完了: {model_key}")
+        return True
+    except Exception as e:
+        logger.error(f"モデルダウンロードエラー: {model_key} - {e}")
+        if progress_callback:
+            progress_callback(f"エラー: {e}")
+        return False
+
+
 class VectorEngine:
-    """MobileNetV3を使用して画像のベクトル化を行うクラス。"""
+    """複数モデル対応の画像ベクトル化クラス"""
     _instance = None
     _lock = threading.Lock()
+    _current_model_key = None
 
     @classmethod
-    def get_instance(cls):
+    def get_instance(cls, model_key=None):
         with cls._lock:
+            if model_key and cls._current_model_key != model_key:
+                cls._instance = None
+                cls._current_model_key = model_key
             if cls._instance is None:
-                cls._instance = cls()
+                cls._instance = cls(model_key=model_key or cls._current_model_key or DEFAULT_AI_MODEL)
         return cls._instance
 
-    def __init__(self, debug_mode=False, cache_size=256):
+    @classmethod
+    def reset_instance(cls):
+        with cls._lock:
+            cls._instance = None
+            cls._current_model_key = None
+
+    def __init__(self, model_key=DEFAULT_AI_MODEL, debug_mode=False, cache_size=256):
         self.debug_mode = debug_mode
         self.cache_size = cache_size
         self.vector_cache = OrderedDict()
-        logger.info("AIモデル(MobileNetV3)の準備を開始...")
+        self.model_key = model_key
+
+        model_info = AI_MODELS.get(model_key)
+        if not model_info:
+            raise AIModelError(f"Unknown model: {model_key}")
+
+        logger.info(f"AIモデル({model_info['name']})の準備を開始...")
 
         try:
-            self.weights = models.MobileNet_V3_Small_Weights.DEFAULT
-            self.model = models.mobilenet_v3_small(weights=self.weights)
-
-            self.model.classifier = torch.nn.Sequential(
-                self.model.classifier[0],
-                self.model.classifier[1],
-                self.model.classifier[2],
-                torch.nn.Identity()
-            )
-
+            self.model, self.preprocess = self._load_model(model_key)
             self.model.eval()
 
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.model.to(self.device)
 
-            self.preprocess = self.weights.transforms()
-
             torch.set_grad_enabled(False)
 
             self.available = True
-            logger.info("AIモデルの準備が完了しました")
+            logger.info(f"AIモデル({model_info['name']})の準備が完了しました")
         except Exception as e:
             logger.error(f"AIモデルの読み込みでエラー: {e}", exc_info=True)
             raise AIModelError(f"Failed to initialize AI model: {e}") from e
+
+    def _load_model(self, model_key):
+        """モデルキーに応じたモデルとプリプロセスを返す"""
+        if model_key == "mobilenet_v3_small":
+            weights = models.MobileNet_V3_Small_Weights.DEFAULT
+            model = models.mobilenet_v3_small(weights=weights)
+            model.classifier = torch.nn.Sequential(
+                model.classifier[0],
+                model.classifier[1],
+                model.classifier[2],
+                torch.nn.Identity()
+            )
+            return model, weights.transforms()
+
+        elif model_key == "mobilenet_v3_large":
+            weights = models.MobileNet_V3_Large_Weights.DEFAULT
+            model = models.mobilenet_v3_large(weights=weights)
+            model.classifier = torch.nn.Sequential(
+                model.classifier[0],
+                model.classifier[1],
+                model.classifier[2],
+                torch.nn.Identity()
+            )
+            return model, weights.transforms()
+
+        elif model_key == "resnet50":
+            weights = models.ResNet50_Weights.DEFAULT
+            model = models.resnet50(weights=weights)
+            model.fc = torch.nn.Identity()
+            return model, weights.transforms()
+
+        elif model_key == "efficientnet_b0":
+            weights = models.EfficientNet_B0_Weights.DEFAULT
+            model = models.efficientnet_b0(weights=weights)
+            model.classifier = torch.nn.Identity()
+            return model, weights.transforms()
+
+        else:
+            raise AIModelError(f"Unsupported model: {model_key}")
 
     def check_available(self):
         return self.available

@@ -9,8 +9,9 @@ import time
 
 from lib.PicSorterGUILogger import get_logger
 from lib.PicSorterGUIState import get_app_state
-from lib.PicSorterGUIAI import VectorEngine
+from lib.PicSorterGUIAI import VectorEngine, check_model_cached, download_model
 from lib.PicSorterGUILib import GetGazoFiles
+from lib.config_defaults import AI_MODELS, DEFAULT_AI_MODEL
 
 import sys
 
@@ -21,6 +22,120 @@ except ImportError:
 
 logger = get_logger(__name__)
 app_state = get_app_state()
+
+
+class ModelSelectDialog(tk.Toplevel):
+    """AIモデル選択ダイアログ"""
+    def __init__(self, parent, current_model_key=None, on_select=None):
+        super().__init__(parent)
+        self.title("AIモデル選択")
+        self.geometry("480x380")
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        self.on_select = on_select
+        self.result_model = current_model_key or DEFAULT_AI_MODEL
+        self.cancelled = True
+
+        tk.Label(self, text="使用するAIモデルを選択してください",
+                 font=("MS Gothic", 11, "bold")).pack(pady=(15, 10))
+
+        self.var_model = tk.StringVar(value=self.result_model)
+
+        self.frame_models = tk.Frame(self)
+        self.frame_models.pack(fill=tk.BOTH, padx=20, pady=5, expand=True)
+
+        self.status_labels = {}
+        for key, info in AI_MODELS.items():
+            frame = tk.Frame(self.frame_models, bd=1, relief=tk.GROOVE, padx=10, pady=8)
+            frame.pack(fill=tk.X, pady=3)
+
+            rb = tk.Radiobutton(frame, text=info["name"], variable=self.var_model,
+                                value=key, font=("MS Gothic", 10, "bold"), anchor="w")
+            rb.pack(fill=tk.X)
+
+            desc_frame = tk.Frame(frame)
+            desc_frame.pack(fill=tk.X, padx=20)
+
+            tk.Label(desc_frame, text=info["description"],
+                     font=("MS Gothic", 9), fg="#555555", anchor="w").pack(side=tk.LEFT)
+
+            cached = check_model_cached(key)
+            status_text = "ダウンロード済み" if cached else "未ダウンロード"
+            status_color = "#008800" if cached else "#cc0000"
+            lbl_status = tk.Label(desc_frame, text=status_text,
+                                  font=("MS Gothic", 9, "bold"), fg=status_color)
+            lbl_status.pack(side=tk.RIGHT)
+            self.status_labels[key] = lbl_status
+
+        # ステータスラベル
+        self.lbl_progress = tk.Label(self, text="", font=("MS Gothic", 9), fg="#0055aa")
+        self.lbl_progress.pack(pady=5)
+
+        # ボタン
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=(5, 15))
+
+        self.btn_download = tk.Button(btn_frame, text="ダウンロード", width=14,
+                                      command=self._on_download, font=("MS Gothic", 10))
+        self.btn_download.pack(side=tk.LEFT, padx=5)
+
+        self.btn_ok = tk.Button(btn_frame, text="OK", width=10,
+                                command=self._on_ok, font=("MS Gothic", 10))
+        self.btn_ok.pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_frame, text="キャンセル", width=10,
+                  command=self._on_cancel, font=("MS Gothic", 10)).pack(side=tk.LEFT, padx=5)
+
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        # モーダルにする
+        self.transient(parent)
+        self.grab_set()
+
+    def _on_download(self):
+        key = self.var_model.get()
+        if check_model_cached(key):
+            self.lbl_progress.config(text=f"{AI_MODELS[key]['name']} は既にダウンロード済みです")
+            return
+
+        self.btn_download.config(state=tk.DISABLED)
+        self.btn_ok.config(state=tk.DISABLED)
+        self.lbl_progress.config(text="ダウンロード中... しばらくお待ちください")
+        self.update()
+
+        def do_download():
+            success = download_model(key, progress_callback=lambda msg: self.after(0, lambda: self.lbl_progress.config(text=msg)))
+            self.after(0, lambda: self._on_download_complete(key, success))
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def _on_download_complete(self, key, success):
+        self.btn_download.config(state=tk.NORMAL)
+        self.btn_ok.config(state=tk.NORMAL)
+        if success:
+            self.lbl_progress.config(text=f"{AI_MODELS[key]['name']} のダウンロードが完了しました")
+            self.status_labels[key].config(text="ダウンロード済み", fg="#008800")
+        else:
+            self.lbl_progress.config(text="ダウンロードに失敗しました")
+
+    def _on_ok(self):
+        key = self.var_model.get()
+        if not check_model_cached(key):
+            messagebox.showwarning("警告", f"{AI_MODELS[key]['name']} がダウンロードされていません。\n先にダウンロードしてください。", parent=self)
+            return
+        self.result_model = key
+        self.cancelled = False
+        self.grab_release()
+        self.destroy()
+        if self.on_select:
+            self.on_select(key)
+
+    def _on_cancel(self):
+        self.cancelled = True
+        self.grab_release()
+        self.destroy()
+
 
 
 class ScrollableFrame(tk.Frame):
@@ -406,11 +521,15 @@ class VisualSortWindow(tk.Toplevel):
         self.frame_mid = tk.Frame(self, bg="#444444", pady=5)
         self.frame_mid.pack(fill=tk.X, side=tk.TOP)
 
+        self.frame_status_bar = tk.Frame(self, bg="#333333")
+        self.frame_status_bar.pack(fill=tk.X, side=tk.TOP)
+
         self.frame_bot = tk.Frame(self, bg="#dddddd")
         self.frame_bot.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
 
         self.init_top_frame()
         self.init_control_frame()
+        self.init_status_bar()
         self.init_bottom_frame()
 
         self.candidates = []
@@ -535,6 +654,34 @@ class VisualSortWindow(tk.Toplevel):
         self.lbl_status = tk.Label(self.frame_mid, text="待機中...", bg="#444444", fg="#aaaaaa")
         self.lbl_status.pack(side=tk.RIGHT, padx=20)
 
+    def init_status_bar(self):
+        """分析プロセスの詳細表示バー"""
+        self.lbl_detail_step = tk.Label(self.frame_status_bar, text="", bg="#333333", fg="#88ccff",
+                                        font=("MS Gothic", 9), anchor="w", padx=10)
+        self.lbl_detail_step.pack(side=tk.LEFT)
+
+        self.lbl_detail_file = tk.Label(self.frame_status_bar, text="", bg="#333333", fg="#aaaaaa",
+                                        font=("MS Gothic", 9), anchor="w")
+        self.lbl_detail_file.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.lbl_detail_progress = tk.Label(self.frame_status_bar, text="", bg="#333333", fg="#00ff00",
+                                            font=("MS Gothic", 9, "bold"), anchor="e", padx=10)
+        self.lbl_detail_progress.pack(side=tk.RIGHT)
+
+    def _update_detail(self, step="", file="", progress=""):
+        """ステータスバーの詳細を更新（メインスレッドから呼ぶ）"""
+        if step:
+            self.lbl_detail_step.config(text=step)
+        if file is not None:
+            self.lbl_detail_file.config(text=file)
+        if progress is not None:
+            self.lbl_detail_progress.config(text=progress)
+
+    def _clear_detail(self):
+        self.lbl_detail_step.config(text="")
+        self.lbl_detail_file.config(text="")
+        self.lbl_detail_progress.config(text="")
+
     def init_bottom_frame(self):
         self.scroll_view = ScrollableFrame(self.frame_bot)
         self.scroll_view.pack(fill=tk.BOTH, expand=True)
@@ -548,13 +695,56 @@ class VisualSortWindow(tk.Toplevel):
 
     def _analysis_task(self):
         try:
-            from PicSorterGUILogic import calculate_file_hash, load_vectors, save_vectors
+            from PicSorterGUILogic import (
+                calculate_file_hash, load_vectors, save_vectors,
+                load_analysis_cache, save_analysis_cache
+            )
 
-            engine = VectorEngine.get_instance()
-            vectors = load_vectors()
+            folder = os.path.dirname(self.target_file)
+            folder_name = os.path.basename(folder)
 
+            # ステップ1: フォルダスキャン
+            self.after(0, lambda: self._update_detail(
+                step="[1/5] フォルダスキャン",
+                file=folder_name,
+                progress=""))
+            files = GetGazoFiles(os.listdir(folder), folder)
+            file_count = len(files)
+            self.after(0, lambda n=file_count: self._update_detail(
+                progress=f"{n}枚検出"))
+
+            # ステップ2: キャッシュ確認
+            self.after(0, lambda: self._update_detail(
+                step="[2/5] キャッシュ確認",
+                file=os.path.basename(self.target_file)))
             t_hash = calculate_file_hash(self.target_file)
 
+            cached = load_analysis_cache(folder, t_hash, file_count)
+            if cached is not None:
+                valid = all(os.path.exists(path) for path, _ in cached)
+                if valid:
+                    self.after(0, lambda: self._update_detail(
+                        step="キャッシュヒット",
+                        file="前回の分析結果を使用",
+                        progress=f"{len(cached)}枚"))
+                    self.after(0, lambda: self._on_analysis_complete(cached, 0, from_cache=True))
+                    return
+
+            # ステップ3: AIモデル準備
+            self.after(0, lambda: self._update_detail(
+                step="[3/5] AIモデル準備",
+                file="ベクトルデータ読み込み中...",
+                progress=""))
+            engine = VectorEngine.get_instance()
+            vectors = load_vectors()
+            self.after(0, lambda n=len(vectors): self._update_detail(
+                file=f"既存ベクトル: {n:,}件",
+                progress=""))
+
+            # 基準画像のベクトル化
+            self.after(0, lambda: self._update_detail(
+                step="[3/5] 基準画像ベクトル化",
+                file=os.path.basename(self.target_file)))
             if t_hash not in vectors:
                 vec = engine.get_image_feature(self.target_file)
                 if vec: vectors[t_hash] = vec
@@ -564,11 +754,10 @@ class VisualSortWindow(tk.Toplevel):
                 self.after(0, lambda: messagebox.showerror("Error", "Failed to compute vector"))
                 return
 
-            folder = os.path.dirname(self.target_file)
-            files = GetGazoFiles(os.listdir(folder), folder)
-
+            # ステップ4: 類似度計算
             results = []
             count = 0
+            new_vectors = 0
             start_time = time.time()
             vectors_updated = False
 
@@ -579,27 +768,50 @@ class VisualSortWindow(tk.Toplevel):
                 f_hash = calculate_file_hash(full_path)
 
                 if f_hash not in vectors:
+                    self.after(0, lambda fn=f: self._update_detail(
+                        step="[4/5] ベクトル化 + 類似度計算",
+                        file=f"[新規] {fn}"))
                     try:
                         v = engine.get_image_feature(full_path)
                         if v:
                             vectors[f_hash] = v
                             vectors_updated = True
+                            new_vectors += 1
                     except Exception:
                         pass
+                else:
+                    if count % 5 == 0:
+                        self.after(0, lambda fn=f: self._update_detail(
+                            step="[4/5] 類似度計算",
+                            file=fn))
 
                 if f_hash in vectors:
                     score = engine.compare_features(t_vec, vectors[f_hash])
                     results.append((full_path, score))
 
                 count += 1
-                if count % 10 == 0:
-                     self.after(0, lambda c=count, t=len(files): self.lbl_status.config(text=f"分析中... {c}/{t}枚"))
+                elapsed = time.time() - start_time
+                self.after(0, lambda c=count, t=file_count, e=elapsed, nv=new_vectors: self._update_detail(
+                    progress=f"{c}/{t}枚  {e:.1f}秒" + (f"  新規{nv}件" if nv > 0 else "")))
 
+            # ステップ5: 保存
             if vectors_updated:
-                 save_vectors(vectors)
+                self.after(0, lambda: self._update_detail(
+                    step="[5/5] ベクトルデータ保存",
+                    file=f"新規{new_vectors}件を保存中..."))
+                save_vectors(vectors)
 
+            self.after(0, lambda: self._update_detail(
+                step="[5/5] 結果整理",
+                file="スコア順にソート中..."))
             results.sort(key=lambda x: x[1], reverse=True)
             elapsed = time.time() - start_time
+
+            # キャッシュ保存
+            self.after(0, lambda: self._update_detail(
+                step="[5/5] キャッシュ保存",
+                file="分析結果をキャッシュに保存中..."))
+            save_analysis_cache(folder, t_hash, results, file_count)
 
             self.after(0, lambda: self._on_analysis_complete(results, elapsed))
 
@@ -607,8 +819,12 @@ class VisualSortWindow(tk.Toplevel):
             logger.error(f"Analysis error: {e}")
             self.after(0, lambda: messagebox.showerror("Error", str(e)))
 
-    def _on_analysis_complete(self, results, elapsed):
-        self.lbl_status.config(text=f"完了 ({elapsed:.2f}秒, {len(results)}枚)")
+    def _on_analysis_complete(self, results, elapsed, from_cache=False):
+        if from_cache:
+            self.lbl_status.config(text=f"キャッシュから読込 ({len(results)}枚)")
+        else:
+            self.lbl_status.config(text=f"完了 ({elapsed:.2f}秒, {len(results)}枚)")
+        self._clear_detail()
         self.all_results = results
         self._compute_score_boundaries()
         self.refresh_grid()

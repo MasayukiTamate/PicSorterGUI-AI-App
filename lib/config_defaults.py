@@ -50,6 +50,35 @@ MAX_AI_THRESHOLD = 1.0
 AI_BATCH_SLEEP = 0.01
 VECTOR_PROCESSING_TIMEOUT = 300
 
+DEFAULT_AI_MODEL = "mobilenet_v3_small"
+
+AI_MODELS = {
+    "mobilenet_v3_small": {
+        "name": "MobileNetV3-Small",
+        "description": "軽量・高速（推奨）",
+        "vector_dim": 1024,
+        "weight_file": "mobilenet_v3_small-047dcff4.pth",
+    },
+    "mobilenet_v3_large": {
+        "name": "MobileNetV3-Large",
+        "description": "バランス型",
+        "vector_dim": 960,
+        "weight_file": "mobilenet_v3_large-8738ca79.pth",
+    },
+    "resnet50": {
+        "name": "ResNet-50",
+        "description": "高精度・重い",
+        "vector_dim": 2048,
+        "weight_file": "resnet50-11ad3fa6.pth",
+    },
+    "efficientnet_b0": {
+        "name": "EfficientNet-B0",
+        "description": "高効率",
+        "vector_dim": 1280,
+        "weight_file": "efficientnet_b0_rwightman-7f5810bc.pth",
+    },
+}
+
 
 # ===========================
 # 4. 画像ファイル設定
@@ -88,6 +117,7 @@ COLOR_STATUS_FG = "#000000"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 VECTOR_DATA_FILE = os.path.join(DATA_DIR, "vectordata.json")
+ANALYSIS_CACHE_FILE = os.path.join(DATA_DIR, "analysis_cache.json")
 CONFIG_FILE = "config.json"
 LOG_DIR = "logs"
 
@@ -109,6 +139,7 @@ def get_default_config():
             "move_dest_list": [""] * MOVE_DESTINATION_SLOTS,
             "move_reg_idx": 0,
             "move_dest_count": MOVE_DESTINATION_MIN,
+            "ai_model": DEFAULT_AI_MODEL,
         },
     }
 

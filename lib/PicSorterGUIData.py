@@ -11,7 +11,7 @@ from lib.PicSorterGUIExceptions import (
 from lib.PicSorterGUILogger import LoggerManager
 from lib.config_defaults import (
     get_default_config, MOVE_DESTINATION_SLOTS,
-    VECTOR_DATA_FILE, CONFIG_FILE
+    VECTOR_DATA_FILE, ANALYSIS_CACHE_FILE, CONFIG_FILE
 )
 
 logger = LoggerManager.get_logger(__name__)
@@ -114,6 +114,97 @@ def save_vectors(vectors):
         raise VectorProcessingError(f"Cannot write vector file: {e}") from e
     except Exception as e:
         logger.error(f"ベクトル保存中に予期しないエラー: {e}", exc_info=True)
+
+
+def clear_vectors():
+    """vectordata.json を空にする"""
+    try:
+        os.makedirs(os.path.dirname(VECTOR_DATA_FILE), exist_ok=True)
+        with open(VECTOR_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+        logger.info("ベクトルデータをクリアしました")
+    except Exception as e:
+        logger.error(f"ベクトルデータクリアエラー: {e}")
+
+
+def clear_analysis_cache():
+    """analysis_cache.json を空にする"""
+    try:
+        if os.path.exists(ANALYSIS_CACHE_FILE):
+            with open(ANALYSIS_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            logger.info("分析キャッシュをクリアしました")
+    except Exception as e:
+        logger.error(f"分析キャッシュクリアエラー: {e}")
+
+
+def get_vector_data_info():
+    """vectordata.json のファイルサイズと件数を返す"""
+    if not os.path.exists(VECTOR_DATA_FILE):
+        return 0, 0
+    try:
+        file_size = os.path.getsize(VECTOR_DATA_FILE)
+        with open(VECTOR_DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return file_size, len(data)
+    except Exception:
+        try:
+            return os.path.getsize(VECTOR_DATA_FILE), 0
+        except Exception:
+            return 0, 0
+
+
+def _make_cache_key(folder, target_hash):
+    return f"{folder}|{target_hash}"
+
+
+def load_analysis_cache(folder, target_hash, current_file_count):
+    """分析結果キャッシュを読み込む。無効ならNoneを返す"""
+    if not os.path.exists(ANALYSIS_CACHE_FILE):
+        return None
+    try:
+        with open(ANALYSIS_CACHE_FILE, "r", encoding="utf-8") as f:
+            all_cache = json.load(f)
+        key = _make_cache_key(folder, target_hash)
+        entry = all_cache.get(key)
+        if not entry:
+            return None
+        if entry.get("file_count") != current_file_count:
+            logger.info(f"キャッシュ無効: ファイル数変更 ({entry.get('file_count')} -> {current_file_count})")
+            return None
+        results = [(r["file"], r["score"]) for r in entry["results"]]
+        logger.info(f"分析キャッシュを読み込みました: {len(results)}件")
+        return results
+    except Exception as e:
+        logger.warning(f"分析キャッシュ読み込みエラー: {e}")
+        return None
+
+
+def save_analysis_cache(folder, target_hash, results, file_count):
+    """分析結果をキャッシュに保存する"""
+    try:
+        all_cache = {}
+        if os.path.exists(ANALYSIS_CACHE_FILE):
+            try:
+                with open(ANALYSIS_CACHE_FILE, "r", encoding="utf-8") as f:
+                    all_cache = json.load(f)
+            except Exception:
+                all_cache = {}
+
+        from datetime import datetime
+        key = _make_cache_key(folder, target_hash)
+        all_cache[key] = {
+            "timestamp": datetime.now().isoformat(),
+            "file_count": file_count,
+            "results": [{"file": path, "score": score} for path, score in results]
+        }
+
+        os.makedirs(os.path.dirname(ANALYSIS_CACHE_FILE), exist_ok=True)
+        with open(ANALYSIS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(all_cache, f, ensure_ascii=False)
+        logger.info(f"分析キャッシュを保存しました: {len(results)}件")
+    except Exception as e:
+        logger.error(f"分析キャッシュ保存エラー: {e}")
 
 
 # -------------------------------------------------------------------
