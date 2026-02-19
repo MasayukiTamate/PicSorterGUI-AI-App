@@ -11,7 +11,7 @@ from lib.PicSorterGUILogger import get_logger
 from lib.PicSorterGUIState import get_app_state
 from lib.PicSorterGUIAI import VectorEngine, check_model_cached, download_model
 from lib.PicSorterGUILib import GetGazoFiles
-from lib.config_defaults import AI_MODELS, DEFAULT_AI_MODEL
+from lib.config_defaults import AI_MODELS, DEFAULT_AI_MODEL, SUPPORTED_IMAGE_FORMATS
 
 import sys
 
@@ -703,15 +703,51 @@ class VisualSortWindow(tk.Toplevel):
             folder = os.path.dirname(self.target_file)
             folder_name = os.path.basename(folder)
 
-            # ステップ1: フォルダスキャン
+            # ステップ1: フォルダスキャン（複数フォルダ対応）
             self.after(0, lambda: self._update_detail(
                 step="[1/5] フォルダスキャン",
                 file=folder_name,
                 progress=""))
-            files = GetGazoFiles(os.listdir(folder), folder)
-            file_count = len(files)
-            self.after(0, lambda n=file_count: self._update_detail(
-                progress=f"{n}枚検出"))
+
+            # ターゲット画像のフォルダからファイル収集
+            all_full_paths = set()
+            base_files = GetGazoFiles(os.listdir(folder), folder)
+            for f in base_files:
+                all_full_paths.add(os.path.normpath(os.path.join(folder, f)))
+
+            # 参照フォルダからファイル収集
+            ref_folders = self.app_state.reference_folders
+            for ref_entry in ref_folders:
+                ref_path = ref_entry.get("path", "")
+                include_sub = ref_entry.get("include_subfolders", False)
+                if not os.path.isdir(ref_path):
+                    continue
+
+                self.after(0, lambda rp=ref_path: self._update_detail(
+                    file=os.path.basename(rp),
+                    progress=f"スキャン中..."))
+
+                if include_sub:
+                    for root_dir, dirs, filenames in os.walk(ref_path):
+                        for fn in filenames:
+                            if fn.lower().endswith(SUPPORTED_IMAGE_FORMATS):
+                                all_full_paths.add(os.path.normpath(os.path.join(root_dir, fn)))
+                else:
+                    try:
+                        ref_items = os.listdir(ref_path)
+                        ref_files = GetGazoFiles(ref_items, ref_path)
+                        for f in ref_files:
+                            all_full_paths.add(os.path.normpath(os.path.join(ref_path, f)))
+                    except PermissionError:
+                        logger.warning(f"アクセス権限がありません: {ref_path}")
+
+            files_full = sorted(all_full_paths)
+            file_count = len(files_full)
+            folder_info = f"{folder_name}"
+            if ref_folders:
+                folder_info += f" + {len(ref_folders)}フォルダ"
+            self.after(0, lambda n=file_count, info=folder_info: self._update_detail(
+                progress=f"{n}枚検出 ({info})"))
 
             # ステップ2: キャッシュ確認
             self.after(0, lambda: self._update_detail(
@@ -719,7 +755,12 @@ class VisualSortWindow(tk.Toplevel):
                 file=os.path.basename(self.target_file)))
             t_hash = calculate_file_hash(self.target_file)
 
-            cached = load_analysis_cache(folder, t_hash, file_count)
+            # キャッシュキーにフォルダ情報を含める
+            ref_key = folder
+            if ref_folders:
+                sorted_refs = sorted(e["path"] + (":sub" if e.get("include_subfolders") else "") for e in ref_folders)
+                ref_key = folder + "|" + "|".join(sorted_refs)
+            cached = load_analysis_cache(ref_key, t_hash, file_count)
             if cached is not None:
                 valid = all(os.path.exists(path) for path, _ in cached)
                 if valid:
@@ -761,14 +802,16 @@ class VisualSortWindow(tk.Toplevel):
             start_time = time.time()
             vectors_updated = False
 
-            for f in files:
-                full_path = os.path.join(folder, f)
-                if full_path == self.target_file: continue
+            target_norm = os.path.normpath(self.target_file)
+            for full_path in files_full:
+                if os.path.normpath(full_path) == target_norm:
+                    continue
 
+                f_name = os.path.basename(full_path)
                 f_hash = calculate_file_hash(full_path)
 
                 if f_hash not in vectors:
-                    self.after(0, lambda fn=f: self._update_detail(
+                    self.after(0, lambda fn=f_name: self._update_detail(
                         step="[4/5] ベクトル化 + 類似度計算",
                         file=f"[新規] {fn}"))
                     try:
@@ -781,7 +824,7 @@ class VisualSortWindow(tk.Toplevel):
                         pass
                 else:
                     if count % 5 == 0:
-                        self.after(0, lambda fn=f: self._update_detail(
+                        self.after(0, lambda fn=f_name: self._update_detail(
                             step="[4/5] 類似度計算",
                             file=fn))
 
@@ -811,7 +854,7 @@ class VisualSortWindow(tk.Toplevel):
             self.after(0, lambda: self._update_detail(
                 step="[5/5] キャッシュ保存",
                 file="分析結果をキャッシュに保存中..."))
-            save_analysis_cache(folder, t_hash, results, file_count)
+            save_analysis_cache(ref_key, t_hash, results, file_count)
 
             self.after(0, lambda: self._on_analysis_complete(results, elapsed))
 

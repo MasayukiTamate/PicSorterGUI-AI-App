@@ -31,6 +31,12 @@
         "image_max_height": 0,
         "smart_move_threshold": 0.9,
         "smart_move_show_thumbnails": true,
-        "show_splash_tips": false
+        "show_splash_tips": false,
+        "reference_folders": [
+            {
+                "path": "K:/next-ここの整理格納-X",
+                "include_subfolders": true
+            }
+        ]
     }
 }

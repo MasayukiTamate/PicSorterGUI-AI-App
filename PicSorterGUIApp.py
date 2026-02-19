@@ -356,6 +356,78 @@ btn_visual_sort = tk.Button(koRoot, text="AI Visual Sort\n(視覚的仕分け)",
                             relief="groove", cursor="hand2", height=3)
 btn_visual_sort.pack(fill=tk.BOTH, padx=8, pady=(8, 4), expand=True)
 
+# --- 参照フォルダ管理エリア ---
+frame_ref_folders = tk.LabelFrame(koRoot, text="参照フォルダ", font=("MS Gothic", 9), padx=4, pady=4)
+frame_ref_folders.pack(fill=tk.X, padx=8, pady=(4, 0))
+
+frame_ref_list = tk.Frame(frame_ref_folders)
+frame_ref_list.pack(fill=tk.X)
+
+
+def refresh_ref_folder_ui():
+    for w in frame_ref_list.winfo_children():
+        w.destroy()
+
+    for i, entry in enumerate(app_state.reference_folders):
+        row = tk.Frame(frame_ref_list)
+        row.pack(fill=tk.X, pady=1)
+
+        basename = os.path.basename(entry["path"]) or entry["path"]
+        lbl = tk.Label(row, text=basename, font=("MS Gothic", 8), anchor="w", width=20)
+        lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        sub_var = tk.BooleanVar(value=entry["include_subfolders"])
+
+        def make_toggle(idx, var):
+            def toggle():
+                app_state.toggle_subfolder(idx)
+                save_ref_folders()
+            return toggle
+
+        chk = tk.Checkbutton(row, text="子フォルダ", variable=sub_var,
+                             font=("MS Gothic", 8), command=make_toggle(i, sub_var))
+        chk.pack(side=tk.LEFT, padx=2)
+
+        def make_remove(idx):
+            def remove():
+                app_state.remove_reference_folder(idx)
+                save_ref_folders()
+                refresh_ref_folder_ui()
+            return remove
+
+        btn_del = tk.Button(row, text="x", font=("MS Gothic", 7), width=2,
+                            command=make_remove(i), relief="flat", fg="red")
+        btn_del.pack(side=tk.RIGHT)
+
+    if not app_state.reference_folders:
+        lbl_empty = tk.Label(frame_ref_list, text="(なし - ターゲット画像のフォルダのみ検索)",
+                             font=("MS Gothic", 8), fg="#888888")
+        lbl_empty.pack(anchor="w")
+
+
+def add_reference_folder():
+    prev_state = koRoot.attributes("-topmost")
+    koRoot.attributes("-topmost", False)
+    path = filedialog.askdirectory(title="参照フォルダを選択")
+    koRoot.attributes("-topmost", prev_state)
+    if path:
+        if app_state.add_reference_folder(path):
+            save_ref_folders()
+            refresh_ref_folder_ui()
+
+
+def save_ref_folders():
+    cfg = app_state.to_dict()
+    save_config(cfg["last_folder"], cfg.get("geometries", {}), cfg["settings"])
+
+
+btn_add_folder = tk.Button(frame_ref_folders, text="+ フォルダを追加",
+                           command=add_reference_folder,
+                           font=("MS Gothic", 9), relief="groove", cursor="hand2")
+btn_add_folder.pack(fill=tk.X, pady=(4, 0))
+
+refresh_ref_folder_ui()
+
 # ベクトルデータサイズ表示
 lbl_vector_info = tk.Label(koRoot, text="", font=("MS Gothic", 9), fg="#888888", anchor="center")
 lbl_vector_info.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -378,7 +450,7 @@ update_vector_info()
 if "main" in SAVED_GEOS and SAVED_GEOS["main"]:
     koRoot.geometry(SAVED_GEOS["main"])
 else:
-    koRoot.geometry("320x220")
+    koRoot.geometry("320x340")
 
 koRoot.protocol("WM_DELETE_WINDOW", on_closing_main)
 

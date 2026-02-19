@@ -140,6 +140,7 @@ def get_default_config():
             "move_reg_idx": 0,
             "move_dest_count": MOVE_DESTINATION_MIN,
             "ai_model": DEFAULT_AI_MODEL,
+            "reference_folders": [],
         },
     }
 

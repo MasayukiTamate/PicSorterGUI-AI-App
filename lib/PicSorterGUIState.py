@@ -46,6 +46,9 @@ class AppState:
         # スプラッシュ設定
         self.show_splash_tips = False
 
+        # 参照フォルダリスト [{"path": str, "include_subfolders": bool}, ...]
+        self.reference_folders = []
+
         # ウィンドウジオメトリ
         self.window_geometries = {
             "main": None,
@@ -170,6 +173,39 @@ class AppState:
         self.show_splash_tips = enabled
         self._notify_callbacks("show_splash_tips_changed", {"enabled": enabled})
 
+    # ==================== 参照フォルダ管理 ====================
+
+    def add_reference_folder(self, path, include_subfolders=False):
+        if not os.path.isdir(path):
+            logger.warning(f"参照フォルダが存在しません: {path}")
+            return False
+        norm_path = os.path.normpath(path)
+        for entry in self.reference_folders:
+            if os.path.normpath(entry["path"]) == norm_path:
+                logger.info(f"参照フォルダは既に登録済み: {path}")
+                return False
+        self.reference_folders.append({"path": path, "include_subfolders": include_subfolders})
+        logger.info(f"参照フォルダを追加: {path} (子フォルダ: {include_subfolders})")
+        self._notify_callbacks("reference_folders_changed", {"folders": self.reference_folders})
+        return True
+
+    def remove_reference_folder(self, index):
+        if 0 <= index < len(self.reference_folders):
+            removed = self.reference_folders.pop(index)
+            logger.info(f"参照フォルダを削除: {removed['path']}")
+            self._notify_callbacks("reference_folders_changed", {"folders": self.reference_folders})
+            return True
+        return False
+
+    def toggle_subfolder(self, index):
+        if 0 <= index < len(self.reference_folders):
+            self.reference_folders[index]["include_subfolders"] = not self.reference_folders[index]["include_subfolders"]
+            entry = self.reference_folders[index]
+            logger.info(f"子フォルダ設定変更: {entry['path']} -> {entry['include_subfolders']}")
+            self._notify_callbacks("reference_folders_changed", {"folders": self.reference_folders})
+            return True
+        return False
+
     # ==================== ウィンドウジオメトリ ====================
 
     def set_window_geometry(self, window_name, geometry):
@@ -227,6 +263,7 @@ class AppState:
                 "smart_move_threshold": self.smart_move_threshold,
                 "smart_move_show_thumbnails": self.smart_move_show_thumbnails,
                 "show_splash_tips": self.show_splash_tips,
+                "reference_folders": self.reference_folders,
             }
         }
 
@@ -264,6 +301,12 @@ class AppState:
                 self.smart_move_threshold = settings.get("smart_move_threshold", 0.90)
                 self.smart_move_show_thumbnails = settings.get("smart_move_show_thumbnails", True)
                 self.show_splash_tips = settings.get("show_splash_tips", False)
+
+                ref_folders = settings.get("reference_folders", [])
+                self.reference_folders = [
+                    {"path": f["path"], "include_subfolders": f.get("include_subfolders", False)}
+                    for f in ref_folders if isinstance(f, dict) and "path" in f
+                ]
 
             logger.info("状態を復元しました")
         except Exception as e:
