@@ -1,0 +1,47 @@
+# Python キャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ビルド成果物
+dist/
+build/
+*.spec
+*.exe
+PicClass/
+
+# ログファイル
+logs/
+*.log
+
+# 大容量データファイル
+data/vectordata.json
+
+# IDE / エディタ設定
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 環境設定（ローカル用）
+*.env
+venv/
+.venv/
+
+# OS生成ファイル
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# サンプル画像（大容量の可能性）
+SamplePicture/
+
+# 旧フォルダ（typo含む）
+above/
+
+# 試作品（ZIPなど大容量）
+試作品/
+
+# Gemini AI設定
+.gemini/

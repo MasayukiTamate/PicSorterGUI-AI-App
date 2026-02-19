@@ -1,0 +1,26 @@
+{
+  "星1": {
+    "name": "星1",
+    "rating": 1,
+    "linked": true,
+    "custom_rating": 1
+  },
+  "星3": {
+    "name": "星3",
+    "rating": 5,
+    "linked": true,
+    "custom_rating": 3
+  },
+  "星5": {
+    "name": "星5",
+    "rating": 5,
+    "linked": true,
+    "custom_rating": 5
+  },
+  "星4": {
+    "name": "星4",
+    "rating": 1,
+    "linked": true,
+    "custom_rating": 4
+  }
+}

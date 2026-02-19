@@ -1,0 +1,21 @@
+# Tasks
+
+- [/] Qwen導入の要件定義
+    - [x] 利用目的の確認 (アプリ組み込み vs 単体利用, テキスト vs 画像認識)
+    - [x] 実行環境の確認 (GPU, VRAM, Python環境)
+    - [x] 導入方法の決定 (Qwen2-VL-2B-InstructをCPUで動作させる)
+- [/] Qwen動作検証 (CPU版)
+    - [x] 依存ライブラリのインストール (transformers, qwen_vl_utils, torch)
+    - [/] [test_qwen_local.py] 作成と単体テスト
+    - [ ] 実行速度と精度の確認
+- [x] GazoToolsAI.pyの単体実行対応
+    - [x] __main__ブロックの追加
+    - [x] 動作確認
+- [x] スクリーンセーバー（自動再生）のAI類似度対応
+    - [x] GazoToolsLogic: 類似画像検索ロジック実装
+    - [x] GazoToolsApp: 設定メニューの追加とSS再生ロジックの改修
+- [ ] アプリケーションへの組み込み (Qwen)
+    - [ ] [lib/QwenTagger.py] 実装 (スレッド対応)
+    - [ ] [GazoToolsLogic.py] UI連携 (メニュー追加)
+    - [ ] 統合テスト
+- [ ] 結果報告・説明書更新

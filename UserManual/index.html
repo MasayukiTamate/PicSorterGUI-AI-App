@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicClass V0.01 ユーザーマニュアル v2.8</title>
+    <style>
+        /* ===== リセット & ベース ===== */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "Segoe UI", "Meiryo", "Hiragino Sans", sans-serif;
+            line-height: 1.75;
+            color: #2c3e50;
+            background: #f0f4f8;
+        }
+
+        /* ===== サイドナビ ===== */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: linear-gradient(180deg, #1a2332 0%, #2c3e50 100%);
+            color: #ecf0f1;
+            overflow-y: auto;
+            padding: 20px 0;
+            z-index: 100;
+            box-shadow: 3px 0 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .sidebar-header {
+            text-align: center;
+            padding: 10px 20px 25px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.3em;
+            color: #f39c12;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-header .version {
+            font-size: 0.8em;
+            color: #95a5a6;
+        }
+
+        .sidebar nav {
+            padding: 15px 0;
+        }
+
+        .sidebar nav a {
+            display: block;
+            color: #bdc3c7;
+            text-decoration: none;
+            padding: 8px 25px;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar nav a:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.06);
+            border-left-color: #f39c12;
+        }
+
+        .sidebar nav a.section-title {
+            color: #f39c12;
+            font-weight: bold;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 15px;
+            padding-bottom: 4px;
+            pointer-events: none;
+        }
+
+        .sidebar nav a.sub {
+            padding-left: 40px;
+            font-size: 0.85em;
+        }
+
+        /* ===== メインコンテンツ ===== */
+        .main {
+            margin-left: 280px;
+            padding: 40px 50px 80px;
+            max-width: 1000px;
+        }
+
+        /* ===== ヒーロー ===== */
+        .hero {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: #fff;
+            padding: 50px 40px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            box-shadow: 0 8px 30px rgba(52, 152, 219, 0.25);
+        }
+
+        .hero h1 {
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+
+        .hero p {
+            font-size: 1.1em;
+            opacity: 0.9;
+            max-width: 600px;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-top: 15px;
+        }
+
+        /* ===== セクション ===== */
+        section {
+            margin-bottom: 50px;
+        }
+
+        h2 {
+            font-size: 1.6em;
+            color: #2c3e50;
+            border-bottom: 3px solid #f39c12;
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        h3 {
+            font-size: 1.2em;
+            color: #e67e22;
+            margin: 25px 0 12px;
+            padding-left: 12px;
+            border-left: 4px solid #e67e22;
+        }
+
+        h4 {
+            font-size: 1.05em;
+            color: #2980b9;
+            margin: 18px 0 8px;
+        }
+
+        p {
+            margin-bottom: 12px;
+        }
+
+        /* ===== カード ===== */
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 25px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e8ecf0;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 18px;
+            margin: 15px 0;
+        }
+
+        .feature-card {
+            background: #fff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e8ecf0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-card .icon {
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+
+        .feature-card h4 {
+            margin: 0 0 6px;
+            border: none;
+            padding: 0;
+        }
+
+        .feature-card p {
+            font-size: 0.9em;
+            color: #666;
+            margin: 0;
+        }
+
+        /* ===== テーブル ===== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+        }
+
+        th {
+            background: #2c3e50;
+            color: #fff;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.9em;
+        }
+
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: #f8f9fa;
+        }
+
+        /* ===== リスト ===== */
+        ul,
+        ol {
+            margin: 10px 0 10px 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        /* ===== コード ===== */
+        code {
+            background: #eef2f7;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-family: "Cascadia Code", Consolas, monospace;
+            font-size: 0.9em;
+            color: #c0392b;
+        }
+
+        /* ===== ハイライトボックス ===== */
+        .tip,
+        .warning,
+        .info,
+        .note {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin: 18px 0;
+            font-size: 0.95em;
+        }
+
+        .tip {
+            background: #eafaf1;
+            border-left: 5px solid #27ae60;
+        }
+
+        .tip::before {
+            content: "Tip: ";
+            font-weight: bold;
+            color: #27ae60;
+        }
+
+        .warning {
+            background: #fef9e7;
+            border-left: 5px solid #f39c12;
+        }
+
+        .warning::before {
+            content: "Note: ";
+            font-weight: bold;
+            color: #f39c12;
+        }
+
+        .info {
+            background: #eaf2f8;
+            border-left: 5px solid #3498db;
+        }
+
+        .info::before {
+            content: "Info: ";
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .note {
+            background: #f5eef8;
+            border-left: 5px solid #8e44ad;
+        }
+
+        .note::before {
+            content: "Point: ";
+            font-weight: bold;
+            color: #8e44ad;
+        }
+
+        /* ===== キーボード ===== */
+        kbd {
+            display: inline-block;
+            background: linear-gradient(180deg, #f8f8f8, #e8e8e8);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-family: "Cascadia Code", Consolas, monospace;
+            font-size: 0.85em;
+            box-shadow: 0 2px 0 #bbb;
+            margin: 0 2px;
+        }
+
+        /* ===== ステップリスト ===== */
+        .steps {
+            counter-reset: step;
+            list-style: none;
+            margin-left: 0;
+            padding: 0;
+        }
+
+        .steps li {
+            position: relative;
+            padding: 12px 0 12px 55px;
+            border-left: 2px solid #e0e0e0;
+            margin-left: 18px;
+        }
+
+        .steps li:last-child {
+            border-left-color: transparent;
+        }
+
+        .steps li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: -16px;
+            top: 10px;
+            width: 32px;
+            height: 32px;
+            background: #3498db;
+            color: #fff;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        /* ===== 画面レイアウト図 ===== */
+        .layout-diagram {
+            display: grid;
+            grid-template-columns: 120px 160px 180px 1fr;
+            gap: 8px;
+            margin: 20px 0;
+            font-size: 0.85em;
+        }
+
+        .layout-box {
+            background: #fff;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            padding: 15px 10px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .layout-box.main-win {
+            border-color: #e74c3c;
+            background: #fdecea;
+        }
+
+        .layout-box.folder-win {
+            border-color: #27ae60;
+            background: #eafaf1;
+        }
+
+        .layout-box.file-win {
+            border-color: #2980b9;
+            background: #eaf2f8;
+        }
+
+        .layout-box.image-win {
+            border-color: #8e44ad;
+            background: #f5eef8;
+        }
+
+        /* ===== フッター ===== */
+        .footer {
+            margin-top: 60px;
+            padding: 25px;
+            text-align: center;
+            color: #95a5a6;
+            font-size: 0.85em;
+            border-top: 1px solid #ddd;
+        }
+
+        /* ===== スクロールバー(sidebar) ===== */
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+
+        /* ===== レスポンシブ ===== */
+        @media (max-width: 900px) {
+            .sidebar {
+                display: none;
+            }
+
+            .main {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .layout-diagram {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ==================== サイドナビ ==================== -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>PicClass</h1>
+            <div class="version">User Manual v2.8</div>
+        </div>
+        <nav>
+            <a href="#intro" class="section-title">Getting Started</a>
+            <a href="#intro">はじめに</a>
+            <a href="#install" class="sub">動作環境・起動方法</a>
+            <a href="#ui-overview" class="sub">画面構成</a>
+
+            <a href="#basic" class="section-title">基本操作</a>
+            <a href="#folder-browse">フォルダ閲覧</a>
+            <a href="#image-view" class="sub">画像表示</a>
+            <a href="#dnd-move" class="sub">D&D移動</a>
+            <a href="#tile-view" class="sub">タイル表示</a>
+
+            <a href="#rating" class="section-title">評価・タグ</a>
+            <a href="#rating">評価システム</a>
+            <a href="#tags" class="sub">タグ付け</a>
+
+            <a href="#ai" class="section-title">AI機能</a>
+            <a href="#smart-move">スマート移動</a>
+            <a href="#visual-sort" class="sub">AI Visual Sort</a>
+            <a href="#vector" class="sub">ベクトル解析</a>
+            <a href="#vector-window" class="sub">ベクトルウィンドウ</a>
+
+            <a href="#settings" class="section-title">設定</a>
+            <a href="#settings">設定メニュー</a>
+            <a href="#display-settings" class="sub">表示設定</a>
+            <a href="#image-size" class="sub">画像サイズ設定</a>
+            <a href="#rating-ui" class="sub">評価UI設定</a>
+            <a href="#vector-settings" class="sub">ベクトル表示設定</a>
+            <a href="#ss-settings" class="sub">スクリーンセーバー</a>
+            <a href="#resource" class="sub">リソース表示</a>
+
+            <a href="#shortcuts" class="section-title">ショートカット</a>
+            <a href="#shortcuts">キーボード操作</a>
+
+            <a href="#troubleshoot" class="section-title">トラブル</a>
+            <a href="#troubleshoot">困ったときは</a>
+            <a href="#faq" class="sub">FAQ</a>
+        </nav>
+    </aside>
+
+    <!-- ==================== メインコンテンツ ==================== -->
+    <div class="main">
+
+        <!-- ヒーロー -->
+        <div class="hero">
+            <h1>PicClass ユーザーマニュアル</h1>
+            <p>AIを活用した直感的な画像整理ツール。大量の画像を楽しく、効率的に管理できます。</p>
+            <span class="badge">Version 2.8 | Created by tamate masayuki</span>
+        </div>
+
+        <!-- ==================== はじめに ==================== -->
+        <section id="intro">
+            <h2>はじめに</h2>
+
+            <div class="card">
+                <p>
+                    <strong>PicClass</strong> は、大量の画像ファイルを効率的に整理・閲覧するためのデスクトップアプリケーションです。
+                    直感的なドラッグ＆ドロップ操作と、AI（MobileNetV3 ディープラーニング）による画像類似度判定を組み合わせ、
+                    推し活やイラスト収集、資料整理を強力にサポートします。
+                </p>
+            </div>
+
+            <!-- コンセプト3つの柱 -->
+            <div class="card-grid">
+                <div class="feature-card">
+                    <div class="icon">&#x1F48E;</div>
+                    <h4>Intuitive（直感）</h4>
+                    <p>D&D操作やシームレスなフォルダ参照で、思考を止めない操作性を実現。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">&#x1F9E0;</div>
+                    <h4>Intelligence（知能）</h4>
+                    <p>AIが画像を解析し、類似画像の検出やベクトル可視化で「目」を拡張。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">&#x1F389;</div>
+                    <h4>Joy（楽しさ）</h4>
+                    <p>パズル配置やカスタマイズ機能で、整理作業をエンターテインメントに。</p>
+                </div>
+            </div>
+
+            <!-- 動作環境 -->
+            <h3 id="install">動作環境・起動方法</h3>
+            <div class="card">
+                <h4>必要な環境</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>要件</th>
+                    </tr>
+                    <tr>
+                        <td>OS</td>
+                        <td>Windows 10 / 11</td>
+                    </tr>
+                    <tr>
+                        <td>Python</td>
+                        <td>3.10 〜 3.13</td>
+                    </tr>
+                    <tr>
+                        <td>必須ライブラリ</td>
+                        <td>Pillow, tkinterdnd2, psutil</td>
+                    </tr>
+                    <tr>
+                        <td>AI機能用</td>
+                        <td>PyTorch, torchvision（MobileNetV3）</td>
+                    </tr>
+                    <tr>
+                        <td>その他</td>
+                        <td>send2trash（ゴミ箱機能用）</td>
+                    </tr>
+                </table>
+
+                <h4>起動方法</h4>
+                <ul>
+                    <li><strong>EXE版</strong>: ビルド済みの場合は <code>PicClass.exe</code> をダブルクリック</li>
+                </ul>
+
+                <div class="tip">EXE版でも、<code>lib/</code> フォルダのPythonスクリプトを差し替えるだけで更新できます。</div>
+            </div>
+
+            <!-- 画面構成 -->
+            <h3 id="ui-overview">画面構成</h3>
+            <div class="card">
+                <p>PicClass は複数のウィンドウで構成されています。各ウィンドウは独立して移動・リサイズが可能です。</p>
+
+                <div class="layout-diagram">
+                    <div class="layout-box main-win">
+                        <div>メインウィンドウ</div>
+                        <small>メニュー・D&D<br>移動先スロット</small>
+                    </div>
+                    <div class="layout-box folder-win">
+                        <div>フォルダ一覧</div>
+                        <small>子フォルダ<br>ナビゲーション</small>
+                    </div>
+                    <div class="layout-box file-win">
+                        <div>ファイル一覧</div>
+                        <small>画像ファイル<br>リスト</small>
+                    </div>
+                    <div class="layout-box image-win">
+                        <div>画像ウィンドウ</div>
+                        <small>プレビュー表示<br>（複数同時可）</small>
+                    </div>
+                </div>
+
+                <table>
+                    <tr>
+                        <th>ウィンドウ</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td><strong>メインウィンドウ</strong></td>
+                        <td>メニューバー、D&Dフォルダ登録エリア、移動先スロット（最大12個）、CPU/メモリ表示</td>
+                    </tr>
+                    <tr>
+                        <td><strong>フォルダ一覧ウィンドウ</strong></td>
+                        <td>現在のフォルダと子フォルダを一覧表示。ダブルクリックでフォルダ移動。右クリックで移動先登録。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>ファイル一覧ウィンドウ</strong></td>
+                        <td>現在のフォルダ内の画像ファイルを一覧表示。ダブルクリックで画像を開く。右クリックで操作メニュー。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>画像ウィンドウ</strong></td>
+                        <td>画像のプレビュー。ドラッグで移動可能。右クリックでタグ・移動・類似検索メニュー。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>評価ウィンドウ</strong></td>
+                        <td>星評価の操作パネル（半透明・タイトルバーなし）。画像クリック時に自動更新。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>情報ウィンドウ</strong></td>
+                        <td>画像のファイル情報・タグ・評価・ベクトル解釈を表示（画面右上に配置）。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>ベクトルウィンドウ</strong></td>
+                        <td>AIベクトル解析の詳細情報を表示。手動解析ボタン付き。</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 基本操作 ==================== -->
+        <section id="basic">
+            <h2>基本操作</h2>
+
+            <h3 id="folder-browse">フォルダ閲覧</h3>
+            <div class="card">
+                <h4>フォルダを開く</h4>
+                <ul>
+                    <li>メニュー <strong>「ファイル(F)」→「フォルダを開く...」</strong> からフォルダ選択ダイアログを開きます。</li>
+                    <li>フォルダ一覧ウィンドウで子フォルダを<strong>ダブルクリック</strong>すると、そのフォルダに移動します。</li>
+                    <li>先頭の<strong>「[現在]」</strong>行をダブルクリックすると、現在のフォルダをリロードします。</li>
+                    <li><strong>「↑ 上のフォルダへ」</strong>ボタンで親フォルダに移動します。</li>
+                </ul>
+
+                <h4>フォルダ一覧の表示内容</h4>
+                <p>各行に <code>(画像数) フォルダ名</code> の形式で表示されます。画像数はフォルダ内の対応画像ファイル数です。</p>
+
+                <div class="info">対応画像形式: <strong>JPG, JPEG, PNG, WebP, BMP, GIF</strong></div>
+            </div>
+
+            <h3 id="image-view">画像表示</h3>
+            <div class="card">
+                <h4>画像を開く方法</h4>
+                <ul>
+                    <li>ファイル一覧ウィンドウで画像名を<strong>ダブルクリック</strong></li>
+                    <li>メインウィンドウで <kbd>Space</kbd> キーを押すと<strong>ランダムな画像</strong>を表示</li>
+                </ul>
+
+                <h4>画像ウィンドウの操作</h4>
+                <table>
+                    <tr>
+                        <th>操作</th>
+                        <th>動作</th>
+                    </tr>
+                    <tr>
+                        <td>左クリック＋ドラッグ</td>
+                        <td>ウィンドウを移動</td>
+                    </tr>
+                    <tr>
+                        <td>左クリック</td>
+                        <td>評価ウィンドウ・情報ウィンドウ・ベクトルウィンドウをこの画像に切り替え</td>
+                    </tr>
+                    <tr>
+                        <td>右クリック</td>
+                        <td>コンテキストメニュー（タグ編集・移動・類似検索・Visual Sort）</td>
+                    </tr>
+                </table>
+
+                <h4>画像サイズの自動調整</h4>
+                <p>画像は自動的にアスペクト比を維持したままリサイズされます。最小・最大サイズは設定で変更できます。</p>
+
+                <div class="tip">「設定(S)」→「表示位置をランダムにする」「表示サイズをランダムにする」をONにすると、表示の度に位置やサイズがランダムに変わります。</div>
+            </div>
+
+            <h3 id="dnd-move">ドラッグ＆ドロップ移動</h3>
+            <div class="card">
+                <p>メインウィンドウには <strong>フォルダ登録エリア</strong> と <strong>移動先スロット</strong> があります。</p>
+
+                <h4>フォルダ登録（上部エリア）</h4>
+                <ol class="steps">
+                    <li>エクスプローラーからフォルダを<strong>上部の登録エリア</strong>にドラッグ＆ドロップします。</li>
+                    <li>フォルダがスロットに順番に登録されます（循環方式）。</li>
+                    <li>登録状態は記号で確認: <strong>◎</strong>=次の登録先、<strong>●</strong>=登録済み、<strong>○</strong>=未登録</li>
+                </ol>
+
+                <div class="warning">フォルダ一覧ウィンドウでも右クリックからスロットに直接登録できます。</div>
+
+                <h4>ファイル移動（下部スロット）</h4>
+                <ol class="steps">
+                    <li>エクスプローラーまたはファイル一覧から画像ファイルを移動先スロットにドラッグ＆ドロップします。</li>
+                    <li>複数ファイルの同時移動にも対応しています。</li>
+                    <li>移動が完了すると、ファイル一覧が自動的に更新されます。</li>
+                </ol>
+
+                <h4>移動先スロット数の変更</h4>
+                <p>メニュー <strong>「設定(S)」→「移動先フォルダ数」</strong> で 2〜12個の間で変更できます。8個以上の場合はフォントが小さくなり、グリッド表示に切り替わります。</p>
+            </div>
+
+            <h3 id="tile-view">タイル表示（パズル配置）</h3>
+            <div class="card">
+                <p>開いている全ての画像ウィンドウを、画面いっぱいにパズルのように敷き詰めて表示します。</p>
+
+                <h4>使い方</h4>
+                <ul>
+                    <li>メニュー <strong>「表示(V)」→「全ての画像を整列(T)」</strong></li>
+                    <li>またはショートカット <kbd>Ctrl</kbd> + <kbd>T</kbd></li>
+                </ul>
+
+                <p>二分木空間分割アルゴリズムにより、タスクバーを避けた有効画面領域にぴったりと並びます。画像はアスペクト比を維持しつつ領域にクロップされます。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 評価・タグ ==================== -->
+        <section id="rating">
+            <h2>評価・タグ</h2>
+
+            <h3>評価システム</h3>
+            <div class="card">
+                <p>画像に <strong>6段階の星評価（1〜6）</strong> を付けることができます。名前付き評価を作成して、分類に活用できます。</p>
+
+                <h4>評価ウィンドウ</h4>
+                <p>半透明のフローティングパネルとして画面上に表示されます。画像ウィンドウをクリックすると、その画像の評価に切り替わります。</p>
+
+                <table>
+                    <tr>
+                        <th>操作</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>星をクリック</td>
+                        <td>1〜6の評価値を設定。評価が未選択の場合は「星N」評価が自動作成されます。</td>
+                    </tr>
+                    <tr>
+                        <td>評価ドロップダウン</td>
+                        <td>作成済みの名前付き評価を選択して画像に適用。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>+</strong> ボタン</td>
+                        <td>新しい名前付き評価を作成（例: 「最高」「保留」「要確認」など）。</td>
+                    </tr>
+                    <tr>
+                        <td>「星と連動」チェック</td>
+                        <td>ON: 全ての同じ評価の星数が連動。OFF: 画像ごとに固定星数を設定。</td>
+                    </tr>
+                    <tr>
+                        <td>「固定星数」スピン</td>
+                        <td>連動OFFの場合に使用する星数を直接設定。</td>
+                    </tr>
+                </table>
+
+                <div class="note">評価ウィンドウのサイズ・位置・フォントサイズは「設定(S)」→「評価UI設定...」で細かくカスタマイズできます。</div>
+            </div>
+
+            <h3 id="tags">タグ付け</h3>
+            <div class="card">
+                <p>画像にテキストタグを付けて管理できます。タグは <strong>MD5ハッシュ</strong> で画像を識別するため、ファイル名を変更してもタグは維持されます。</p>
+
+                <h4>タグの編集方法</h4>
+                <ul>
+                    <li>画像ウィンドウを <strong>右クリック</strong> →「タグを編集」</li>
+                    <li>ファイル一覧で <strong>右クリック</strong> →「タグ追加/編集」</li>
+                </ul>
+
+                <p>複数のタグは <strong>セミコロン（;）区切り</strong> で入力してください。<br>
+                    例: <code>風景;海;夕焼け</code></p>
+
+                <p>タグが設定されている画像には、ウィンドウ左上にタグラベルが表示されます。</p>
+            </div>
+        </section>
+
+        <!-- ==================== AI機能 ==================== -->
+        <section id="ai">
+            <h2>AI機能</h2>
+
+            <div class="info">AI機能は
+                <strong>MobileNetV3</strong>（軽量ディープラーニングモデル）を使用し、画像を1024次元の特徴ベクトルに変換して類似度を計算します。初回起動時にモデルのダウンロードが発生する場合があります。
+            </div>
+
+            <h3 id="smart-move">スマート移動（Smart Move）</h3>
+            <div class="card">
+                <p>AIが画像の類似度を判定し、似ている画像をまとめて別のフォルダに移動できる機能です。</p>
+
+                <h4>起動方法</h4>
+                <ul>
+                    <li>画像ウィンドウを右クリック →「登録フォルダに移動」→ 移動先スロットを選択</li>
+                    <li>画像ウィンドウを右クリック →「類似画像を探す」</li>
+                    <li>ファイル一覧で右クリック →「類似画像を探す」</li>
+                </ul>
+
+                <h4>操作手順</h4>
+                <ol class="steps">
+                    <li><strong>類似度ダイアログ</strong> が開き、選択した画像に似ている画像がリスト表示されます。</li>
+                    <li><strong>閾値スライダー</strong> を動かして、どの程度似ている画像まで表示するか調整します（値が高いほど厳密）。</li>
+                    <li>サムネイルで対象画像を確認し、移動したい画像を選択します。</li>
+                    <li>「移動」ボタンで一括移動を実行します。</li>
+                </ol>
+
+                <div class="tip">サムネイル表示はON/OFFが切り替えられます。大量の画像を処理する場合はOFFにすると高速化できます。</div>
+            </div>
+
+            <h3 id="visual-sort">AI Visual Sort（視覚的仕分け）</h3>
+            <div class="card">
+                <p>AIを活用して、直感的に画像を仕分けるための専用ツールです。Smart Moveより大規模な仕分け作業に向いています。</p>
+
+                <h4>起動方法</h4>
+                <ul>
+                    <li>メニュー <strong>「ツール(T)」→「AI Visual Sort (視覚的仕分け)」</strong></li>
+                    <li>画像ウィンドウを右クリック →「AI Visual Sort」</li>
+                </ul>
+
+                <h4>画面構成</h4>
+                <table>
+                    <tr>
+                        <th>エリア</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td><strong>上部</strong></td>
+                        <td>仕分けの基準となるターゲット画像。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>中部</strong></td>
+                        <td>操作パネル。閾値スライダーとアクションボタン（移動・コピー・ゴミ箱）。</td>
+                    </tr>
+                    <tr>
+                        <td><strong>下部</strong></td>
+                        <td>AIが類似と判断した画像のグリッド一覧。チェックで選択。</td>
+                    </tr>
+                </table>
+
+                <h4>操作手順</h4>
+                <ol class="steps">
+                    <li>基準にしたい画像を表示した状態でツールを起動します。</li>
+                    <li>スライダーを動かして、似ている画像の範囲を調整します（左＝緩い、右＝厳しい）。</li>
+                    <li>仕分けたい画像にチェックを入れます（「全て選択」ボタンもあります）。</li>
+                    <li><strong>「移動」</strong>（登録フォルダに移動）、<strong>「コピー」</strong>（登録フォルダにコピー）、<strong>「ゴミ箱」</strong>（ゴミ箱に送る）のいずれかを実行します。
+                    </li>
+                </ol>
+
+                <div class="warning">「ゴミ箱」操作は <code>send2trash</code> を使用するため、Windowsのごみ箱から復元可能です。</div>
+            </div>
+
+            <h3 id="vector">ベクトル解析</h3>
+            <div class="card">
+                <p>AIが画像をどのように認識しているかを、<strong>5つのカテゴリ</strong>で人間が理解できるテキストに変換して表示します。</p>
+
+                <table>
+                    <tr>
+                        <th>カテゴリ</th>
+                        <th>対応次元</th>
+                        <th>解析内容の例</th>
+                    </tr>
+                    <tr>
+                        <td><strong>色彩</strong></td>
+                        <td>0 - 251</td>
+                        <td>赤, 緑, 青, 明度, 彩度, 色相</td>
+                    </tr>
+                    <tr>
+                        <td><strong>エッジ</strong></td>
+                        <td>251 - 451</td>
+                        <td>水平線, 垂直線, 曲線, 複雑度</td>
+                    </tr>
+                    <tr>
+                        <td><strong>テクスチャ</strong></td>
+                        <td>451 - 751</td>
+                        <td>滑らか, 粗い, パターン, グラデーション</td>
+                    </tr>
+                    <tr>
+                        <td><strong>形状</strong></td>
+                        <td>751 - 921</td>
+                        <td>円, 四角, 三角, 対称性</td>
+                    </tr>
+                    <tr>
+                        <td><strong>セマンティック</strong></td>
+                        <td>921 - 1024</td>
+                        <td>動物, 植物, 風景, 建物, 人物</td>
+                    </tr>
+                </table>
+
+                <h4>解釈モード</h4>
+                <ul>
+                    <li><strong>labels</strong>: 上位N次元のラベル表示（デフォルト）</li>
+                    <li><strong>shap</strong>: 貢献度ベースの表示（SHAP風）</li>
+                    <li><strong>custom</strong>: カスタム拡張用</li>
+                </ul>
+
+                <h4>自動・手動解析</h4>
+                <ul>
+                    <li><strong>自動解析</strong>: ベクトル未登録の画像を開くと自動計算（設定でOFF可能）</li>
+                    <li><strong>手動解析</strong>: 画像ウィンドウ下部の「(ベクトル未登録)」テキストをクリック</li>
+                    <li><strong>一括解析</strong>: メニュー <strong>「ツール(T)」→「AIベクトルを更新・作成」</strong>（バックグラウンド実行）</li>
+                </ul>
+            </div>
+
+            <h3 id="vector-window">ベクトルウィンドウ</h3>
+            <div class="card">
+                <p>ベクトル解析の結果を表示する専用ウィンドウです。画像ウィンドウをクリックすると、選択した画像の解析情報に切り替わります。</p>
+
+                <h4>表示・非表示の切り替え</h4>
+                <ul>
+                    <li>メニュー <strong>「設定(S)」→「ベクトルウィンドウ」→「表示/非表示」</strong></li>
+                </ul>
+
+                <p>ウィンドウ下部の <strong>「解析開始」ボタン</strong> で、現在選択中の画像を手動で解析できます。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 設定 ==================== -->
+        <section id="settings">
+            <h2>設定</h2>
+
+            <div class="card">
+                <p>設定はメニューバーの <strong>「設定(S)」</strong> から変更できます。全ての設定はアプリ終了時に <code>config.json</code> に自動保存されます。</p>
+            </div>
+
+            <h3 id="display-settings">表示設定</h3>
+            <div class="card">
+                <table>
+                    <tr>
+                        <th>設定項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>表示位置をランダムにする</td>
+                        <td>画像ウィンドウの表示位置をランダムに配置</td>
+                    </tr>
+                    <tr>
+                        <td>表示サイズをランダムにする</td>
+                        <td>画像ウィンドウのサイズをランダムに変更（最小/最大サイズ内）</td>
+                    </tr>
+                    <tr>
+                        <td>評価ウィンドウを表示</td>
+                        <td>星評価パネルの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>情報ウィンドウを表示</td>
+                        <td>画像情報パネルの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>ベクトル情報を表示</td>
+                        <td>画像ウィンドウ内のベクトル解釈テキスト表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>内部数値も表示する</td>
+                        <td>ベクトル値の数値も併記</td>
+                    </tr>
+                    <tr>
+                        <td>未登録なら自動で計算する</td>
+                        <td>ベクトル未登録画像の自動解析ON/OFF</td>
+                    </tr>
+                    <tr>
+                        <td>常に最前面(T) ON/OFF</td>
+                        <td>全ウィンドウの最前面表示切り替え</td>
+                    </tr>
+                </table>
+
+                <h4>表示メニュー</h4>
+                <table>
+                    <tr>
+                        <th>メニュー項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>フォルダ一覧を表示</td>
+                        <td>フォルダ一覧ウィンドウの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>ファイル一覧を表示</td>
+                        <td>ファイル一覧ウィンドウの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>全ての画像を閉じる(R)</td>
+                        <td>開いている全ての画像ウィンドウを閉じる</td>
+                    </tr>
+                    <tr>
+                        <td>全ての画像を整列(T)</td>
+                        <td>パズル型タイル配置</td>
+                    </tr>
+                    <tr>
+                        <td>全ての最前面表示をOFF</td>
+                        <td>全ウィンドウの最前面表示を一括解除</td>
+                    </tr>
+                </table>
+            </div>
+
+            <h3 id="image-size">画像表示サイズ設定</h3>
+            <div class="card">
+                <p>メニュー <strong>「設定(S)」→「画像表示サイズ設定...」</strong> で画像ウィンドウのサイズ範囲を調整できます。</p>
+
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                        <th>初期値</th>
+                    </tr>
+                    <tr>
+                        <td>最小幅</td>
+                        <td>画像ウィンドウの最小幅（ピクセル）</td>
+                        <td>500</td>
+                    </tr>
+                    <tr>
+                        <td>最小高さ</td>
+                        <td>画像ウィンドウの最小高さ（ピクセル）</td>
+                        <td>500</td>
+                    </tr>
+                    <tr>
+                        <td>最大幅</td>
+                        <td>0 を指定すると画面幅の80%を使用</td>
+                        <td>0</td>
+                    </tr>
+                    <tr>
+                        <td>最大高さ</td>
+                        <td>0 を指定すると画面高さの80%を使用</td>
+                        <td>0</td>
+                    </tr>
+                </table>
+            </div>
+
+            <h3 id="rating-ui">評価UI設定</h3>
+            <div class="card">
+                <p>メニュー <strong>「設定(S)」→「評価UI設定...」</strong> で評価ウィンドウの外観を細かくカスタマイズできます。</p>
+
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>サイズプリセット</td>
+                        <td>小・中・大やカスタムから選択</td>
+                    </tr>
+                    <tr>
+                        <td>幅 / 高さ</td>
+                        <td>ウィンドウのピクセルサイズ</td>
+                    </tr>
+                    <tr>
+                        <td>位置プリセット</td>
+                        <td>画面上の配置位置を選択</td>
+                    </tr>
+                    <tr>
+                        <td>横位置 / 縦位置（%）</td>
+                        <td>画面に対する相対位置</td>
+                    </tr>
+                    <tr>
+                        <td>パディング / マージン</td>
+                        <td>内側余白 / 画面端からの余白</td>
+                    </tr>
+                    <tr>
+                        <td>評価テキストのフォントサイズ</td>
+                        <td>評価名の文字サイズ</td>
+                    </tr>
+                    <tr>
+                        <td>星のフォントサイズ</td>
+                        <td>星マークの文字サイズ</td>
+                    </tr>
+                    <tr>
+                        <td>UI要素の順序</td>
+                        <td>評価名・星・設定の表示順を変更</td>
+                    </tr>
+                </table>
+            </div>
+
+            <h3 id="vector-settings">ベクトル表示設定</h3>
+            <div class="card">
+                <p>メニュー <strong>「設定(S)」→「ベクトル表示設定...」</strong> でAI解析情報の表示をカスタマイズできます。</p>
+
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>ベクトル表示を有効にする</td>
+                        <td>全体のON/OFF</td>
+                    </tr>
+                    <tr>
+                        <td>解釈モード</td>
+                        <td>labels / shap / custom</td>
+                    </tr>
+                    <tr>
+                        <td>カテゴリ別表示</td>
+                        <td>色彩・エッジ・テクスチャ・形状・セマンティックの個別ON/OFF</td>
+                    </tr>
+                    <tr>
+                        <td>表示最大次元数</td>
+                        <td>表示する特徴の最大数（1〜50）</td>
+                    </tr>
+                    <tr>
+                        <td>類似度閾値</td>
+                        <td>表示する最小類似度スコア</td>
+                    </tr>
+                </table>
+            </div>
+
+            <h3 id="ss-settings">スクリーンセーバー（自動再生）</h3>
+            <div class="card">
+                <p>画像を一定間隔で自動的に切り替えて表示するモードです。</p>
+
+                <h4>設定項目</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>スクリーンセーバー(自動再生)</td>
+                        <td>ON/OFFの切り替え</td>
+                    </tr>
+                    <tr>
+                        <td>再生間隔（秒）</td>
+                        <td>画像を切り替える間隔（1〜60秒）</td>
+                    </tr>
+                    <tr>
+                        <td>AI類似度順で再生</td>
+                        <td>ONにすると類似画像順で連続表示</td>
+                    </tr>
+                    <tr>
+                        <td>類似度の閾値</td>
+                        <td>AI再生時の類似度フィルタ（0.0〜1.0）</td>
+                    </tr>
+                    <tr>
+                        <td>子フォルダの画像も含める</td>
+                        <td>サブフォルダの画像もスライドショーに含める</td>
+                    </tr>
+                </table>
+
+                <div class="tip"><kbd>Escape</kbd> キーでスクリーンセーバーを停止できます。</div>
+            </div>
+
+            <h3 id="resource">リソース表示設定</h3>
+            <div class="card">
+                <p>メインウィンドウ下部のステータスバーに CPU使用率とメモリ使用量がリアルタイム表示されます。CPU負荷に応じて背景色がグラデーション変化します。</p>
+
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                        <th>初期値</th>
+                    </tr>
+                    <tr>
+                        <td>CPU低負荷時の色</td>
+                        <td>CPU使用率が低いときの背景色（HEX）</td>
+                        <td><code>#e0ffe0</code>（薄緑）</td>
+                    </tr>
+                    <tr>
+                        <td>CPU高負荷時の色</td>
+                        <td>CPU使用率が高いときの背景色（HEX）</td>
+                        <td><code>#ff8080</code>（薄赤）</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== ショートカット ==================== -->
+        <section id="shortcuts">
+            <h2>キーボードショートカット</h2>
+
+            <div class="card">
+                <table>
+                    <tr>
+                        <th>キー</th>
+                        <th>動作</th>
+                        <th>備考</th>
+                    </tr>
+                    <tr>
+                        <td><kbd>Space</kbd></td>
+                        <td>ランダム画像を表示</td>
+                        <td>メインウィンドウにフォーカスがある時</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>F</kbd></td>
+                        <td>メインウィンドウにフォーカス</td>
+                        <td>最前面に表示してフォーカスを移動</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>R</kbd></td>
+                        <td>全ての画像ウィンドウを閉じる</td>
+                        <td>評価・情報ウィンドウは非表示のみ</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>E</kbd></td>
+                        <td>エクスプローラーで開く</td>
+                        <td>現在のフォルダをWindowsエクスプローラーで表示</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>T</kbd></td>
+                        <td>タイル表示（パズル配置）</td>
+                        <td>全画像ウィンドウを画面に敷き詰め</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>I</kbd></td>
+                        <td>情報ウィンドウ 表示/非表示</td>
+                        <td>存在しない場合は新規作成</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Escape</kbd></td>
+                        <td>スクリーンセーバー停止</td>
+                        <td>自動再生モードを終了</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== メニュー一覧 ==================== -->
+        <section id="menu-list">
+            <h2>メニュー一覧</h2>
+
+            <div class="card">
+                <h4>ファイル(F)</h4>
+                <table>
+                    <tr>
+                        <th>メニュー項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>フォルダを開く...</td>
+                        <td>フォルダ選択ダイアログで画像フォルダを選択</td>
+                    </tr>
+                    <tr>
+                        <td>エクスプローラーで開く(E)</td>
+                        <td>現在のフォルダをWindowsエクスプローラーで表示</td>
+                    </tr>
+                    <tr>
+                        <td>終了(X)</td>
+                        <td>設定を保存してアプリを終了</td>
+                    </tr>
+                </table>
+
+                <h4>表示(V)</h4>
+                <table>
+                    <tr>
+                        <th>メニュー項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>フォルダ一覧を表示</td>
+                        <td>フォルダ一覧ウィンドウの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>ファイル一覧を表示</td>
+                        <td>ファイル一覧ウィンドウの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>全ての画像を閉じる(R)</td>
+                        <td>開いている画像ウィンドウを一括クローズ</td>
+                    </tr>
+                    <tr>
+                        <td>全ての画像を整列(T)</td>
+                        <td>パズル型タイル配置</td>
+                    </tr>
+                    <tr>
+                        <td>全ての最前面表示をOFF</td>
+                        <td>全ウィンドウの最前面固定を解除</td>
+                    </tr>
+                </table>
+
+                <h4>設定(S)</h4>
+                <table>
+                    <tr>
+                        <th>メニュー項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>表示位置をランダムにする</td>
+                        <td>画像ウィンドウの位置をランダム化</td>
+                    </tr>
+                    <tr>
+                        <td>表示サイズをランダムにする</td>
+                        <td>画像ウィンドウのサイズをランダム化</td>
+                    </tr>
+                    <tr>
+                        <td>評価ウィンドウを表示</td>
+                        <td>星評価パネルの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>情報ウィンドウを表示</td>
+                        <td>画像情報パネルの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>ベクトル情報を表示</td>
+                        <td>ベクトル解釈テキストの表示/非表示</td>
+                    </tr>
+                    <tr>
+                        <td>内部数値も表示する</td>
+                        <td>ベクトル値の数値表示</td>
+                    </tr>
+                    <tr>
+                        <td>未登録なら自動で計算する</td>
+                        <td>オンデマンド自動ベクトル計算</td>
+                    </tr>
+                    <tr>
+                        <td>スクリーンセーバー(自動再生)</td>
+                        <td>自動画像切り替えモード</td>
+                    </tr>
+                    <tr>
+                        <td>SS設定</td>
+                        <td>再生間隔・AI設定・子フォルダ設定</td>
+                    </tr>
+                    <tr>
+                        <td>移動先フォルダ数</td>
+                        <td>D&Dスロット数の変更（2〜12）</td>
+                    </tr>
+                    <tr>
+                        <td>全登録フォルダをリセット</td>
+                        <td>移動先スロットを全消去</td>
+                    </tr>
+                    <tr>
+                        <td>画像表示サイズ設定...</td>
+                        <td>最小/最大サイズの変更ダイアログ</td>
+                    </tr>
+                    <tr>
+                        <td>評価UI設定...</td>
+                        <td>評価ウィンドウの外観設定ダイアログ</td>
+                    </tr>
+                    <tr>
+                        <td>常に最前面(T) ON/OFF</td>
+                        <td>メインウィンドウの最前面表示切り替え</td>
+                    </tr>
+                    <tr>
+                        <td>リソース表示設定</td>
+                        <td>CPU色の変更</td>
+                    </tr>
+                    <tr>
+                        <td>起動画面設定</td>
+                        <td>スプラッシュ画面の豆知識表示ON/OFF</td>
+                    </tr>
+                    <tr>
+                        <td>ベクトル表示設定...</td>
+                        <td>ベクトル解析の詳細設定ダイアログ</td>
+                    </tr>
+                    <tr>
+                        <td>ベクトルウィンドウ</td>
+                        <td>ベクトル解析専用ウィンドウの表示/非表示</td>
+                    </tr>
+                </table>
+
+                <h4>ツール(T)</h4>
+                <table>
+                    <tr>
+                        <th>メニュー項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>AIベクトルを更新・作成</td>
+                        <td>フォルダ内全画像の一括ベクトル化（バックグラウンド実行）</td>
+                    </tr>
+                    <tr>
+                        <td>AI Visual Sort (視覚的仕分け)</td>
+                        <td>AI Visual Sortウィンドウを起動</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 右クリックメニュー ==================== -->
+        <section id="context-menu">
+            <h2>右クリックメニュー</h2>
+
+            <div class="card">
+                <h4>フォルダ一覧ウィンドウ</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>登録を挿入</td>
+                        <td>次の登録先スロットにフォルダを登録</td>
+                    </tr>
+                    <tr>
+                        <td>1: [フォルダ名] 〜 N:</td>
+                        <td>選択したスロットに直接登録</td>
+                    </tr>
+                </table>
+
+                <h4>ファイル一覧ウィンドウ</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>名前変更</td>
+                        <td>ファイル名を変更（拡張子は自動保持）</td>
+                    </tr>
+                    <tr>
+                        <td>登録フォルダに移動</td>
+                        <td>登録済みスロットを選択して移動</td>
+                    </tr>
+                    <tr>
+                        <td>タグ追加/編集</td>
+                        <td>タグ編集ダイアログを表示</td>
+                    </tr>
+                    <tr>
+                        <td>類似画像を探す</td>
+                        <td>スマート移動ダイアログを表示</td>
+                    </tr>
+                </table>
+
+                <h4>画像ウィンドウ</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>タグを編集</td>
+                        <td>タグ編集ダイアログを表示</td>
+                    </tr>
+                    <tr>
+                        <td>登録フォルダに移動</td>
+                        <td>スマート移動ダイアログ経由で移動</td>
+                    </tr>
+                    <tr>
+                        <td>類似画像を探す</td>
+                        <td>スマート移動ダイアログを表示</td>
+                    </tr>
+                    <tr>
+                        <td>AI Visual Sort</td>
+                        <td>Visual Sortウィンドウを起動</td>
+                    </tr>
+                </table>
+
+                <h4>ベクトル解釈テキスト（画像ウィンドウ内）</h4>
+                <table>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td>左クリック</td>
+                        <td>ベクトル未登録の場合、手動解析を実行</td>
+                    </tr>
+                    <tr>
+                        <td>右クリック → 表示テキストをコピー</td>
+                        <td>解釈テキストをクリップボードにコピー</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== データファイル ==================== -->
+        <section id="data-files">
+            <h2>データファイル</h2>
+
+            <div class="card">
+                <p>以下のファイルがアプリケーションデータとして自動生成・保存されます。</p>
+
+                <table>
+                    <tr>
+                        <th>ファイル</th>
+                        <th>形式</th>
+                        <th>説明</th>
+                    </tr>
+                    <tr>
+                        <td><code>config.json</code></td>
+                        <td>JSON</td>
+                        <td>アプリ設定（ウィンドウ位置・全設定値）</td>
+                    </tr>
+                    <tr>
+                        <td><code>data/tagdata.csv</code></td>
+                        <td>CSV</td>
+                        <td>画像タグデータ（MD5ハッシュ→タグ）</td>
+                    </tr>
+                    <tr>
+                        <td><code>data/ratings.json</code></td>
+                        <td>JSON</td>
+                        <td>名前付き評価の定義データ</td>
+                    </tr>
+                    <tr>
+                        <td><code>data/vectordata.json</code></td>
+                        <td>JSON</td>
+                        <td>AI特徴ベクトルのキャッシュ</td>
+                    </tr>
+                    <tr>
+                        <td><code>logs/error_YYYYMMDD.log</code></td>
+                        <td>テキスト</td>
+                        <td>日付ごとのエラーログ</td>
+                    </tr>
+                </table>
+
+                <div class="warning"><code>vectordata.json</code> は画像数に応じて大きくなります（1画像あたり約4KB）。不要な場合は削除しても再計算されます。</div>
+            </div>
+        </section>
+
+        <!-- ==================== トラブルシューティング ==================== -->
+        <section id="troubleshoot">
+            <h2>困ったときは</h2>
+
+            <div class="card">
+                <h4>アプリが起動しない</h4>
+                <ul>
+                    <li>Python 3.10以上がインストールされているか確認してください。</li>
+                    <li>必要なライブラリがインストールされているか確認:
+                        <code>pip install Pillow tkinterdnd2 psutil torch torchvision send2trash</code></li>
+                    <li><code>config.json</code> が壊れている場合、削除して再起動してください。</li>
+                </ul>
+
+                <h4>AI機能が動かない</h4>
+                <ul>
+                    <li>PyTorch と torchvision がインストールされているか確認してください。</li>
+                    <li>初回起動時にMobileNetV3モデルのダウンロードが必要です。インターネット接続を確認してください。</li>
+                    <li>GPUが無くても動作しますが、CPU実行となるため処理が遅くなる場合があります。</li>
+                </ul>
+
+                <h4>画像が表示されない</h4>
+                <ul>
+                    <li>対応画像形式（JPG, JPEG, PNG, WebP, BMP, GIF）であることを確認してください。</li>
+                    <li>ファイルが壊れていないか、他のアプリで開けるか確認してください。</li>
+                </ul>
+
+                <h4>エラーが発生した場合</h4>
+                <ul>
+                    <li><code>logs/</code> フォルダ内のエラーログファイルを確認してください。</li>
+                    <li>画像ウィンドウにエラーが表示された場合、「エラー詳細をコピー」ボタンで情報をコピーできます。</li>
+                </ul>
+            </div>
+
+            <h3 id="faq">FAQ</h3>
+            <div class="card">
+                <h4>Q: ファイル名を変えたらタグや評価が消えた？</h4>
+                <p>A: タグ・評価は
+                    <strong>MD5ハッシュ</strong>（ファイルの中身）で紐づけられているため、ファイル名変更では消えません。ただし、画像を編集してファイル内容が変わるとハッシュが変わり、紐づけが切れます。
+                </p>
+
+                <h4>Q: ベクトルデータが大きくなりすぎた？</h4>
+                <p>A: <code>data/vectordata.json</code> を削除すれば、必要な時に再計算されます。または、不要な画像のベクトルだけ削除することも可能です。</p>
+
+                <h4>Q: 移動先スロットがリセットされた？</h4>
+                <p>A: アプリが異常終了した場合、最後の保存状態が復元されます。正常終了（ウィンドウの×ボタンまたはメニューの終了）で確実に保存されます。</p>
+
+                <h4>Q: EXE版の更新方法は？</h4>
+                <p>A: <code>lib/</code> フォルダ内のPythonスクリプトファイルを差し替えるだけで更新できます。EXEを再ビルドする必要はありません。</p>
+            </div>
+        </section>
+
+        <!-- フッター -->
+        <div class="footer">
+            <p>PicClass v0.01 User Manual v2.8</p>
+            <p>Created by tamate masayuki / Refactored by Antigravity</p>
+            <p>Generated on 2026/02/10</p>
+        </div>
+
+    </div>
+
+</body>
+
+</html>
