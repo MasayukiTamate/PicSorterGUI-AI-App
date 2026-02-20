@@ -95,6 +95,7 @@ def open_model_select_dialog():
         # VectorEngine をリセットして新モデルで初期化準備
         VectorEngine.reset_instance()
 
+        update_model_info()
         update_vector_info()
 
     ModelSelectDialog(koRoot, current_model, on_select=on_model_selected)
@@ -428,6 +429,18 @@ btn_add_folder.pack(fill=tk.X, pady=(4, 0))
 
 refresh_ref_folder_ui()
 
+# 使用中AIモデル表示
+lbl_model_info = tk.Label(koRoot, text="", font=("MS Gothic", 9), fg="#4a90d9", anchor="center")
+lbl_model_info.pack(fill=tk.X, padx=8, pady=(4, 0))
+
+def update_model_info():
+    try:
+        current_key = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+        model_name = AI_MODELS.get(current_key, {}).get("name", current_key)
+        lbl_model_info.config(text=f"使用モデル: {model_name}")
+    except Exception:
+        lbl_model_info.config(text="使用モデル: 不明")
+
 # ベクトルデータサイズ表示
 lbl_vector_info = tk.Label(koRoot, text="", font=("MS Gothic", 9), fg="#888888", anchor="center")
 lbl_vector_info.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -443,6 +456,7 @@ def update_vector_info():
     except Exception:
         lbl_vector_info.config(text="AIデータ: 取得失敗")
 
+update_model_info()
 update_vector_info()
 
 

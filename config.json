@@ -1,7 +1,7 @@
 {
-    "last_folder": "K:\\Syusyoku\\PicSorterGUI-AI",
+    "last_folder": "C:\\Teisyutubutu\\PicSorterGUI-AI-App",
     "geometries": {
-        "main": "320x220+961+115",
+        "main": "320x220+1332+54",
         "folder": "",
         "file": ""
     },
@@ -34,8 +34,8 @@
         "show_splash_tips": false,
         "reference_folders": [
             {
-                "path": "K:/next-ここの整理格納-X",
-                "include_subfolders": true
+                "path": "C:/Users/manaby/Pictures",
+                "include_subfolders": false
             }
         ]
     }
