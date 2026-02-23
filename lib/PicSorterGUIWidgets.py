@@ -669,55 +669,39 @@ class SimilarityMoveDialog(tk.Toplevel):
 
 
 class GroupDetailWindow(tk.Toplevel):
-    """グループ詳細ウィンドウ: グループ内の全画像をサムネイルで表示し、再仕分けが可能"""
+    """グループ詳細ウィンドウ: グループ内の全画像をサムネイルで表示、個別除外可能"""
 
     def __init__(self, parent_dialog, group):
         super().__init__(parent_dialog)
         self.parent_dialog = parent_dialog
         self.group = group
         self._thumb_refs = []
+        self._member_vars = []  # 各画像のチェック状態
 
         self.title(f"グループ {group['group_num']} ({len(group['members'])}枚)")
-        self.geometry("480x520")
+        self.geometry("480x500")
         self.attributes("-topmost", True)
         self.resizable(True, True)
         self.transient(parent_dialog)
 
         self._build_ui()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
         # ヘッダー
         header = tk.Frame(self)
         header.pack(fill=tk.X, padx=10, pady=(8, 4))
-        tk.Label(header, text=f"グループ {self.group['group_num']}: {len(self.group['members'])}枚",
-                 font=("MS Gothic", 11, "bold"), fg="#0055cc").pack(side=tk.LEFT)
+        self._lbl_header = tk.Label(header,
+                 text=f"グループ {self.group['group_num']}: {len(self.group['members'])}枚",
+                 font=("MS Gothic", 11, "bold"), fg="#0055cc")
+        self._lbl_header.pack(side=tk.LEFT)
 
-        # 再仕分け用の閾値コントロール
-        thresh_frame = tk.LabelFrame(self, text="閾値を変更して再仕分け", font=("MS Gothic", 9), padx=8, pady=4)
-        thresh_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
-
-        self.var_threshold = tk.DoubleVar(value=self.parent_dialog.var_threshold.get())
-        self.lbl_thresh_val = tk.Label(thresh_frame,
-                                       text=f"{self.var_threshold.get()*100:.0f}%",
-                                       font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
-        self.lbl_thresh_val.pack(side=tk.RIGHT)
-
-        self.scale = tk.Scale(thresh_frame, variable=self.var_threshold,
-                              from_=0.20, to=1.0, resolution=0.01,
-                              orient=tk.HORIZONTAL, showvalue=False,
-                              command=lambda v: self.lbl_thresh_val.config(text=f"{float(v)*100:.0f}%"))
-        self.scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        tk.Button(thresh_frame, text="再仕分け", font=("MS Gothic", 9, "bold"),
-                  command=self._request_reanalyze, fg="#cc3300").pack(side=tk.RIGHT, padx=(4, 0))
-
-        tk.Label(self, text="※ 全画像を対象にグローバル再仕分けします（他の群にも影響）",
-                 font=("MS Gothic", 8), fg="#888888").pack(padx=10, anchor="w")
+        tk.Label(header, text="チェックを外すと対象から除外",
+                 font=("MS Gothic", 8), fg="#888888").pack(side=tk.RIGHT)
 
         # サムネイル一覧（スクロール可能）
         list_frame = tk.Frame(self, bd=1, relief=tk.SUNKEN)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 8))
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 4))
 
         canvas = tk.Canvas(list_frame, bg="#ffffff", highlightthickness=0)
         scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=canvas.yview)
@@ -736,13 +720,21 @@ class GroupDetailWindow(tk.Toplevel):
         canvas.bind("<MouseWheel>", _on_mousewheel)
         inner.bind("<MouseWheel>", _on_mousewheel)
 
-        # 画像をグリッド表示
+        # 画像をグリッド表示（チェックボックス付き）
         cols = 4
         for i, path in enumerate(self.group["members"]):
             r, c = divmod(i, cols)
             cell = tk.Frame(inner, bg="#ffffff", padx=2, pady=2)
             cell.grid(row=r, column=c, sticky="nsew")
             cell.bind("<MouseWheel>", _on_mousewheel)
+
+            # チェックボックス
+            var = tk.BooleanVar(value=True)
+            self._member_vars.append(var)
+            cb = tk.Checkbutton(cell, variable=var, bg="#ffffff",
+                                activebackground="#ffffff",
+                                command=self._update_count)
+            cb.pack(anchor="e")
 
             try:
                 with Image.open(path) as img:
@@ -766,11 +758,43 @@ class GroupDetailWindow(tk.Toplevel):
         for c in range(cols):
             inner.columnconfigure(c, weight=1)
 
-    def _request_reanalyze(self):
-        """親ダイアログにグローバル再仕分けを依頼"""
-        new_threshold = self.var_threshold.get()
+        # 下部ボタン
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=(4, 8))
+        tk.Button(btn_frame, text="全選択", font=("MS Gothic", 8),
+                  command=lambda: self._set_all(True)).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_frame, text="全解除", font=("MS Gothic", 8),
+                  command=lambda: self._set_all(False)).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_frame, text="適用して閉じる", font=("MS Gothic", 9, "bold"),
+                  command=self._apply_and_close).pack(side=tk.LEFT, padx=(12, 4))
+
+    def _set_all(self, value):
+        for var in self._member_vars:
+            var.set(value)
+        self._update_count()
+
+    def _update_count(self):
+        checked = sum(1 for v in self._member_vars if v.get())
+        total = len(self._member_vars)
+        self._lbl_header.config(
+            text=f"グループ {self.group['group_num']}: {checked}/{total}枚 選択中")
+
+    def _apply_and_close(self):
+        """チェック状態を反映してグループのメンバーを更新"""
+        new_members = [
+            path for path, var in zip(self.group["members"], self._member_vars)
+            if var.get()
+        ]
+        self.group["members"] = new_members
+
+        # 親ダイアログのグループ一覧の枚数表示を更新
+        if hasattr(self.parent_dialog, '_update_group_counts'):
+            self.parent_dialog._update_group_counts()
+
         self.destroy()
-        self.parent_dialog._reanalyze_global(new_threshold)
+
+    def _on_close(self):
+        self._apply_and_close()
 
 
 class AutoSortDialog(tk.Toplevel):
@@ -1096,7 +1120,68 @@ class AutoSortDialog(tk.Toplevel):
         self._confirm_frame = tk.Frame(self)
         self._confirm_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
 
-        # 一括操作ボタン
+        # === 実行モード設定 ===
+        mode_frame = tk.LabelFrame(self._confirm_frame, text="実行モード",
+                                   font=("MS Gothic", 9), padx=6, pady=4)
+        mode_frame.pack(fill=tk.X, pady=(0, 4))
+
+        self.var_mode = tk.StringVar(value="move")
+
+        mode_row = tk.Frame(mode_frame)
+        mode_row.pack(fill=tk.X)
+        tk.Radiobutton(mode_row, text="フォルダに移動", variable=self.var_mode,
+                       value="move", font=("MS Gothic", 9),
+                       command=self._on_mode_change).pack(side=tk.LEFT, padx=(0, 12))
+        tk.Radiobutton(mode_row, text="ファイル名を変更", variable=self.var_mode,
+                       value="rename", font=("MS Gothic", 9),
+                       command=self._on_mode_change).pack(side=tk.LEFT)
+
+        # リネーム設定フレーム（リネームモード時のみ表示）
+        self._rename_frame = tk.Frame(mode_frame)
+
+        rename_row1 = tk.Frame(self._rename_frame)
+        rename_row1.pack(fill=tk.X, pady=(4, 2))
+        tk.Label(rename_row1, text="位置:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self.var_position = tk.StringVar(value="prefix")
+        tk.Radiobutton(rename_row1, text="前に追加", variable=self.var_position,
+                       value="prefix", font=("MS Gothic", 8),
+                       command=self._update_rename_preview).pack(side=tk.LEFT, padx=(4, 8))
+        tk.Radiobutton(rename_row1, text="後ろに追加", variable=self.var_position,
+                       value="suffix", font=("MS Gothic", 8),
+                       command=self._update_rename_preview).pack(side=tk.LEFT)
+
+        rename_row2 = tk.Frame(self._rename_frame)
+        rename_row2.pack(fill=tk.X, pady=2)
+        tk.Label(rename_row2, text="番号:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self.var_num_type = tk.StringVar(value="number")
+        tk.Radiobutton(rename_row2, text="番号(01,02...)", variable=self.var_num_type,
+                       value="number", font=("MS Gothic", 8),
+                       command=self._update_rename_preview).pack(side=tk.LEFT, padx=(4, 8))
+        tk.Radiobutton(rename_row2, text="アルファベット(a,b...)", variable=self.var_num_type,
+                       value="alpha", font=("MS Gothic", 8),
+                       command=self._update_rename_preview).pack(side=tk.LEFT)
+
+        rename_row3 = tk.Frame(self._rename_frame)
+        rename_row3.pack(fill=tk.X, pady=2)
+        tk.Label(rename_row3, text="桁数:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self.var_digits = tk.IntVar(value=2)
+        sp = tk.Spinbox(rename_row3, from_=1, to=4, textvariable=self.var_digits,
+                   width=3, font=("MS Gothic", 8),
+                   command=self._update_rename_preview)
+        sp.pack(side=tk.LEFT, padx=(4, 12))
+        tk.Label(rename_row3, text="区切り:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self.var_separator = tk.StringVar(value="_")
+        sep_entry = tk.Entry(rename_row3, textvariable=self.var_separator, width=3,
+                 font=("MS Gothic", 8))
+        sep_entry.pack(side=tk.LEFT, padx=4)
+        self.var_separator.trace_add("write", lambda *_: self._update_rename_preview())
+
+        # リネームプレビュー
+        self._lbl_preview = tk.Label(self._rename_frame, text="",
+                                     font=("MS Gothic", 8), fg="#006600", anchor="w")
+        self._lbl_preview.pack(fill=tk.X, pady=(2, 0))
+
+        # 一括操作ボタン + ヒント
         ctrl_frame = tk.Frame(self._confirm_frame)
         ctrl_frame.pack(fill=tk.X, pady=(0, 4))
         tk.Button(ctrl_frame, text="全選択", font=("MS Gothic", 8),
@@ -1131,11 +1216,12 @@ class AutoSortDialog(tk.Toplevel):
 
         # グループ一覧表示
         self._group_vars = []
+        self._group_entries = []
+        self._group_checkbuttons = []
         for group in self.all_groups:
             var = tk.BooleanVar(value=True)
             self._group_vars.append(var)
-            row = tk.Frame(self._inner_frame, bg="#f0f4ff", bd=1, relief=tk.GROOVE,
-                           cursor="hand2")
+            row = tk.Frame(self._inner_frame, bg="#f0f4ff", bd=1, relief=tk.GROOVE)
             row.pack(fill=tk.X, padx=6, pady=2)
 
             # サムネイル
@@ -1147,12 +1233,19 @@ class AutoSortDialog(tk.Toplevel):
 
             cb = tk.Checkbutton(
                 row, variable=var, bg="#f0f4ff", activebackground="#f0f4ff",
-                text=f"グループ {group['group_num']}: {len(group['members'])}枚",
+                text=f"{len(group['members'])}枚",
                 font=("MS Gothic", 9), anchor="w",
             )
-            cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            cb.pack(side=tk.LEFT)
+            self._group_checkbuttons.append(cb)
 
-            # 行クリックで詳細を開く（チェックボックス以外の部分）
+            # フォルダ名/単語入力欄
+            entry_var = tk.StringVar(value=f"グループ_{group['group_num']:03d}")
+            entry = tk.Entry(row, textvariable=entry_var, font=("MS Gothic", 9), width=18)
+            entry.pack(side=tk.LEFT, padx=(4, 4), fill=tk.X, expand=True)
+            self._group_entries.append(entry_var)
+
+            # 詳細ボタン
             btn_detail = tk.Button(row, text="詳細", font=("MS Gothic", 8),
                                    command=lambda g=group: self._open_group_detail(g),
                                    bg="#dde4f0", relief=tk.FLAT, cursor="hand2")
@@ -1166,7 +1259,7 @@ class AutoSortDialog(tk.Toplevel):
             w.destroy()
 
         self.btn_reanalyze = tk.Button(self._btn_frame, text="再分析", width=10,
-                                       command=self._start_reanalyze_from_main, font=("MS Gothic", 10))
+                                       command=self._start_reanalyze, font=("MS Gothic", 10))
         self.btn_reanalyze.pack(side=tk.LEFT, padx=5)
         self.btn_action = tk.Button(self._btn_frame, text="実行", width=10,
                                     command=self._execute_selected, font=("MS Gothic", 10))
@@ -1174,6 +1267,53 @@ class AutoSortDialog(tk.Toplevel):
         self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
                                    command=self._on_close, font=("MS Gothic", 10))
         self.btn_close.pack(side=tk.LEFT, padx=5)
+
+        # ウィンドウサイズ調整
+        self.geometry("520x620")
+
+    def _on_mode_change(self):
+        """モード切替時にリネーム設定の表示/非表示を切り替え"""
+        if self.var_mode.get() == "rename":
+            self._rename_frame.pack(fill=tk.X)
+            # Entry のデフォルト値をリネーム用に変更
+            for i, entry_var in enumerate(self._group_entries):
+                if entry_var.get().startswith("グループ_"):
+                    entry_var.set("")
+            self._update_rename_preview()
+        else:
+            self._rename_frame.pack_forget()
+            # Entry のデフォルト値をフォルダ名に戻す
+            for i, (group, entry_var) in enumerate(zip(self.all_groups, self._group_entries)):
+                if entry_var.get() == "":
+                    entry_var.set(f"グループ_{group['group_num']:03d}")
+
+    def _update_rename_preview(self):
+        """リネーム例のプレビューを更新"""
+        if not hasattr(self, '_lbl_preview'):
+            return
+        try:
+            sep = self.var_separator.get()
+            digits = self.var_digits.get()
+            use_alpha = self.var_num_type.get() == "alpha"
+            is_prefix = self.var_position.get() == "prefix"
+            num = self._format_number(0, digits, use_alpha)
+            word = "<単語>"
+
+            if is_prefix:
+                example = f"{word}{sep}{num}{sep}photo.jpg"
+            else:
+                example = f"photo{sep}{word}{sep}{num}.jpg"
+
+            self._lbl_preview.config(text=f"例: {example}")
+        except Exception:
+            self._lbl_preview.config(text="")
+
+    def _update_group_counts(self):
+        """グループ一覧の枚数表示を更新（詳細ウィンドウでメンバー変更後）"""
+        if not hasattr(self, '_group_checkbuttons'):
+            return
+        for group, cb_widget in zip(self.all_groups, self._group_checkbuttons):
+            cb_widget.config(text=f"{len(group['members'])}枚")
 
     def _open_group_detail(self, group):
         """グループ詳細ウィンドウを開く"""
@@ -1183,14 +1323,8 @@ class AutoSortDialog(tk.Toplevel):
         for var in self._group_vars:
             var.set(value)
 
-    def _reanalyze_global(self, new_threshold):
-        """グローバル再仕分け（GroupDetailWindowから呼ばれる）"""
-        self.var_threshold.set(new_threshold)
-        self.lbl_thresh_val.config(text=f"{new_threshold*100:.0f}%")
-        self._start_reanalyze_from_main()
-
-    def _start_reanalyze_from_main(self):
-        """メインウィンドウから再分析を開始（全画像対象でグローバル再クラスタリング）"""
+    def _start_reanalyze(self):
+        """再分析を開始（全画像対象でグローバル再クラスタリング）"""
         # 確認フレームを破棄
         try:
             self.unbind_all("<MouseWheel>")
@@ -1215,27 +1349,54 @@ class AutoSortDialog(tk.Toplevel):
         self.btn_close.pack(side=tk.LEFT, padx=5)
 
         self._log(f"\n--- 再分析開始 (しきい値: {self.var_threshold.get()*100:.0f}%) ---")
-
-        # 再分析実行
         self.stop_flag = False
         self.scale.config(state=tk.DISABLED)
+        self.geometry("520x560")
         self._thread = threading.Thread(target=self._run_sort, daemon=True)
         self._thread.start()
 
+    def _format_number(self, idx, digits, use_alpha):
+        """ナンバリング文字列を生成"""
+        if use_alpha:
+            # a, b, ..., z, aa, ab, ...
+            result = ""
+            n = idx
+            for _ in range(digits):
+                result = chr(ord('a') + (n % 26)) + result
+                n //= 26
+            return result
+        else:
+            return str(idx + 1).zfill(digits)
+
     def _execute_selected(self):
-        """チェックONのグループのファイルを移動"""
-        selected = [
-            group for group, var in zip(self.all_groups, self._group_vars)
-            if var.get()
-        ]
+        """チェックONのグループをモードに応じて実行"""
+        selected = []
+        for group, var, entry_var in zip(self.all_groups, self._group_vars, self._group_entries):
+            if var.get():
+                group["label"] = entry_var.get()
+                selected.append(group)
 
         if not selected:
             self._set_status("グループが選択されていません")
             return
 
-        # グループ番号を連番に振り直し
-        for i, g in enumerate(selected, 1):
-            g["group_num"] = i
+        mode = self.var_mode.get()
+
+        # リネームモードで単語が空のグループをチェック
+        if mode == "rename":
+            empty = [g for g in selected if not g["label"].strip()]
+            if empty:
+                self._set_status(f"単語が未入力のグループがあります ({len(empty)}件)")
+                return
+
+        # 設定を保存
+        self._exec_config = {
+            "mode": mode,
+            "position": self.var_position.get() if mode == "rename" else None,
+            "num_type": self.var_num_type.get() if mode == "rename" else None,
+            "digits": self.var_digits.get() if mode == "rename" else None,
+            "separator": self.var_separator.get() if mode == "rename" else None,
+        }
 
         # 確認フレームを削除してログ表示に戻す
         try:
@@ -1259,46 +1420,85 @@ class AutoSortDialog(tk.Toplevel):
 
         self._selected_groups = selected
         self.stop_flag = False
-        self._thread = threading.Thread(target=self._run_move, daemon=True)
+        self.geometry("520x560")
+        self._thread = threading.Thread(target=self._run_execute, daemon=True)
         self._thread.start()
 
-    def _run_move(self):
-        """選択グループのファイル移動を実行（ワーカースレッド）"""
+    def _run_execute(self):
+        """選択グループの実行（フォルダ移動 or リネーム）"""
         try:
-            moved_groups = 0
+            config = self._exec_config
+            mode = config["mode"]
+            done_groups = 0
             total_selected = len(self._selected_groups)
 
             for idx, group in enumerate(self._selected_groups):
                 if self.stop_flag:
                     break
-                group_num = group["group_num"]
+                label = group["label"]
                 members = group["members"]
-                group_folder = self._create_group_folder(group_num)
 
-                self._set_status(f"仕分け中... ({idx+1}/{total_selected})")
-                self._log(f"グループ {group_num}: {len(members)}枚 → グループ_{group_num:03d}")
+                if mode == "move":
+                    # フォルダに移動
+                    folder_name = label.strip() or f"グループ_{group['group_num']:03d}"
+                    group_folder = os.path.join(self.folder, folder_name)
+                    os.makedirs(group_folder, exist_ok=True)
 
-                for fp in members:
-                    if self.stop_flag:
-                        break
-                    try:
-                        self.move_callback(fp, group_folder, refresh=False)
-                    except TypeError:
-                        self.move_callback(fp, group_folder)
-                    except Exception as e:
-                        self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
+                    self._set_status(f"移動中... ({idx+1}/{total_selected})")
+                    self._log(f"{folder_name}: {len(members)}枚")
 
-                moved_groups += 1
+                    for fp in members:
+                        if self.stop_flag:
+                            break
+                        try:
+                            self.move_callback(fp, group_folder, refresh=False)
+                        except TypeError:
+                            self.move_callback(fp, group_folder)
+                        except Exception as e:
+                            self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
+
+                else:
+                    # リネーム
+                    word = label.strip()
+                    sep = config["separator"]
+                    digits = config["digits"]
+                    use_alpha = config["num_type"] == "alpha"
+                    is_prefix = config["position"] == "prefix"
+
+                    self._set_status(f"リネーム中... ({idx+1}/{total_selected})")
+                    self._log(f"「{word}」: {len(members)}枚")
+
+                    for file_idx, fp in enumerate(members):
+                        if self.stop_flag:
+                            break
+                        try:
+                            dirname = os.path.dirname(fp)
+                            basename = os.path.basename(fp)
+                            stem, ext = os.path.splitext(basename)
+                            num = self._format_number(file_idx, digits, use_alpha)
+
+                            if is_prefix:
+                                new_name = f"{word}{sep}{num}{sep}{stem}{ext}"
+                            else:
+                                new_name = f"{stem}{sep}{word}{sep}{num}{ext}"
+
+                            new_path = os.path.join(dirname, new_name)
+                            os.rename(fp, new_path)
+                        except Exception as e:
+                            self._log(f"  リネーム失敗: {os.path.basename(fp)} ({e})")
+
+                done_groups += 1
 
             if self.refresh_callback:
                 self.after(0, lambda: self.refresh_callback(self.folder))
 
             if self.stop_flag:
-                self._log(f"--- 停止: {moved_groups}/{total_selected}グループ移動済み ---")
+                self._log(f"--- 停止: {done_groups}/{total_selected}グループ処理済み ---")
                 self._finish(stopped=True)
             else:
-                self._log(f"--- 完了: {moved_groups}グループを仕分けました ---")
-                self._finish(stopped=False, group_count=moved_groups,
+                action = "移動" if mode == "move" else "リネーム"
+                self._log(f"--- 完了: {done_groups}グループを{action}しました ---")
+                self._finish(stopped=False, group_count=done_groups,
                              isolated_count=0)
 
         except Exception as e:

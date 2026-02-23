@@ -1,5 +1,5 @@
 {
-    "last_folder": "C:\\Teisyutubutu\\PicSorterGUI-AI-App",
+    "last_folder": "K:\\Syusyoku\\PicSorterGUI-AI",
     "geometries": {
         "main": "320x335+1253+63",
         "folder": "",
@@ -32,12 +32,7 @@
         "smart_move_threshold": 0.9,
         "smart_move_show_thumbnails": true,
         "show_splash_tips": false,
-        "reference_folders": [
-            {
-                "path": "C:/Users/manaby/Pictures",
-                "include_subfolders": false
-            }
-        ],
+        "reference_folders": [],
         "ai_model": "mobilenet_v3_small",
         "custom_model_path": "",
         "custom_model_arch": "mobilenet_v3_small",
