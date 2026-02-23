@@ -679,6 +679,7 @@ class GroupDetailWindow(tk.Toplevel):
         self._member_vars = []  # 各画像のチェック状態
         self._thumb_size = 100  # サムネイルサイズ（ホイールで変更可能）
         self._cols = 4
+        self._exec_thread = None
         self._original_members = list(group["members"])  # 元のメンバー保持
         self._prev_members = list(group["members"])  # グリッド描画時のメンバー追跡
         self._seed_path = group["members"][0] if group["members"] else None
@@ -941,6 +942,10 @@ class GroupDetailWindow(tk.Toplevel):
 
     def _execute_group(self, mode):
         """この群のみ実行（move / rename / both）"""
+        if self._exec_thread and self._exec_thread.is_alive():
+            messagebox.showinfo("処理中", "現在処理中です。完了までお待ちください。", parent=self)
+            return
+
         members = self._get_checked_members()
         if not members:
             return
@@ -973,6 +978,21 @@ class GroupDetailWindow(tk.Toplevel):
         if mode in ("move", "both") and not folder_name:
             folder_name = f"グループ_{self.group['group_num']:03d}"
 
+        # 処理中ダイアログ
+        prog = tk.Toplevel(self)
+        prog.title("処理中")
+        prog.geometry("300x80")
+        prog.resizable(False, False)
+        prog.attributes("-topmost", True)
+        prog.transient(self)
+        prog.grab_set()
+        prog_label = tk.Label(prog, text="処理中...", font=("MS Gothic", 10))
+        prog_label.pack(expand=True, pady=10)
+        prog_status = tk.Label(prog, text="", font=("MS Gothic", 8), fg="#666666")
+        prog_status.pack()
+
+        total_files = len(members)
+
         def _do_execute():
             try:
                 current_members = list(members)
@@ -982,7 +1002,9 @@ class GroupDetailWindow(tk.Toplevel):
                     group_folder = os.path.join(folder, folder_name)
                     os.makedirs(group_folder, exist_ok=True)
                     new_members = []
-                    for fp in current_members:
+                    for i, fp in enumerate(current_members):
+                        self.after(0, lambda i=i: prog_status.config(
+                            text=f"移動中... {i+1}/{total_files}"))
                         try:
                             parent.move_callback(fp, group_folder, refresh=False)
                             new_members.append(os.path.join(
@@ -1003,6 +1025,8 @@ class GroupDetailWindow(tk.Toplevel):
                     use_alpha = rename_config["num_type"] == "alpha"
                     is_prefix = rename_config["position"] == "prefix"
                     for file_idx, fp in enumerate(current_members):
+                        self.after(0, lambda i=file_idx: prog_status.config(
+                            text=f"リネーム中... {i+1}/{total_files}"))
                         try:
                             dirname = os.path.dirname(fp)
                             stem, ext = os.path.splitext(os.path.basename(fp))
@@ -1017,14 +1041,21 @@ class GroupDetailWindow(tk.Toplevel):
 
                 if parent.refresh_callback:
                     self.after(0, lambda: parent.refresh_callback(parent.folder))
-                self.after(0, lambda: messagebox.showinfo(
-                    "完了", f"グループ {self.group['group_num']} の処理が完了しました",
-                    parent=self))
-            except Exception as e:
-                self.after(0, lambda: messagebox.showerror(
-                    "エラー", str(e), parent=self))
 
-        threading.Thread(target=_do_execute, daemon=True).start()
+                def _on_done():
+                    prog.destroy()
+                    messagebox.showinfo(
+                        "完了", f"グループ {self.group['group_num']} の処理が完了しました",
+                        parent=self)
+                self.after(0, _on_done)
+            except Exception as e:
+                def _on_err():
+                    prog.destroy()
+                    messagebox.showerror("エラー", str(e), parent=self)
+                self.after(0, _on_err)
+
+        self._exec_thread = threading.Thread(target=_do_execute, daemon=True)
+        self._exec_thread.start()
 
     def _apply_and_close(self):
         """チェック状態を反映してグループのメンバーを更新"""
@@ -1159,6 +1190,9 @@ class AutoSortDialog(tk.Toplevel):
 
     def _start_analysis(self):
         """分析を開始（初回はベクトル計算+クラスタリング、2回目以降はクラスタリングのみ）"""
+        if self._thread and self._thread.is_alive():
+            messagebox.showinfo("処理中", "現在処理中です。完了までお待ちください。", parent=self)
+            return
         self.stop_flag = False
         self.scale.config(state=tk.DISABLED)
         self.btn_action.config(text="停止", command=self._stop, state=tk.NORMAL)
@@ -1626,6 +1660,9 @@ class AutoSortDialog(tk.Toplevel):
 
     def _start_reanalyze(self):
         """再分析を開始（全画像対象でグローバル再クラスタリング）"""
+        if self._thread and self._thread.is_alive():
+            messagebox.showinfo("処理中", "現在処理中です。完了までお待ちください。", parent=self)
+            return
         # 確認フレームを破棄
         try:
             self.unbind_all("<MouseWheel>")
@@ -1681,6 +1718,10 @@ class AutoSortDialog(tk.Toplevel):
 
     def _execute_selected(self):
         """チェックONのグループをモードに応じて実行"""
+        if self._thread and self._thread.is_alive():
+            messagebox.showinfo("処理中", "現在処理中です。完了までお待ちください。", parent=self)
+            return
+
         do_move = self.var_do_move.get()
         do_rename = self.var_do_rename.get()
 
@@ -1741,8 +1782,41 @@ class AutoSortDialog(tk.Toplevel):
         self._selected_groups = selected
         self.stop_flag = False
         self.geometry("520x560")
+
+        # 処理中ダイアログ
+        self._prog_dialog = tk.Toplevel(self)
+        self._prog_dialog.title("処理中")
+        self._prog_dialog.geometry("320x100")
+        self._prog_dialog.resizable(False, False)
+        self._prog_dialog.attributes("-topmost", True)
+        self._prog_dialog.transient(self)
+        self._prog_dialog.grab_set()
+        self._prog_dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        self._prog_label = tk.Label(self._prog_dialog, text="処理中...",
+                                    font=("MS Gothic", 10))
+        self._prog_label.pack(expand=True, pady=(10, 2))
+        self._prog_status = tk.Label(self._prog_dialog, text="",
+                                     font=("MS Gothic", 8), fg="#666666")
+        self._prog_status.pack()
+        tk.Button(self._prog_dialog, text="停止", font=("MS Gothic", 9),
+                  command=self._stop).pack(pady=(2, 8))
+
         self._thread = threading.Thread(target=self._run_execute, daemon=True)
         self._thread.start()
+
+    def _close_prog_dialog(self):
+        """処理中ダイアログを閉じる"""
+        if hasattr(self, '_prog_dialog') and self._prog_dialog.winfo_exists():
+            try:
+                self._prog_dialog.grab_release()
+            except Exception:
+                pass
+            self._prog_dialog.destroy()
+
+    def _update_prog(self, text):
+        """処理中ダイアログのステータスを更新"""
+        if hasattr(self, '_prog_status') and self._prog_dialog.winfo_exists():
+            self.after(0, lambda: self._prog_status.config(text=text))
 
     def _run_execute(self):
         """選択グループの実行（フォルダ移動 / リネーム / 両方）"""
@@ -1752,6 +1826,9 @@ class AutoSortDialog(tk.Toplevel):
             do_rename = config["do_rename"]
             done_groups = 0
             total_selected = len(self._selected_groups)
+
+            total_files = sum(len(g["members"]) for g in self._selected_groups)
+            processed_files = 0
 
             for idx, group in enumerate(self._selected_groups):
                 if self.stop_flag:
@@ -1772,6 +1849,10 @@ class AutoSortDialog(tk.Toplevel):
                     for fp in members:
                         if self.stop_flag:
                             break
+                        processed_files += 1
+                        self._update_prog(
+                            f"移動中... {processed_files}/{total_files} "
+                            f"({idx+1}/{total_selected}グループ)")
                         try:
                             self.move_callback(fp, group_folder, refresh=False)
                             new_members.append(os.path.join(
@@ -1799,6 +1880,11 @@ class AutoSortDialog(tk.Toplevel):
                     for file_idx, fp in enumerate(members):
                         if self.stop_flag:
                             break
+                        if not do_move:
+                            processed_files += 1
+                        self._update_prog(
+                            f"リネーム中... {processed_files}/{total_files} "
+                            f"({idx+1}/{total_selected}グループ)")
                         try:
                             dirname = os.path.dirname(fp)
                             basename = os.path.basename(fp)
@@ -1820,6 +1906,8 @@ class AutoSortDialog(tk.Toplevel):
             if self.refresh_callback:
                 self.after(0, lambda: self.refresh_callback(self.folder))
 
+            self.after(0, self._close_prog_dialog)
+
             if self.stop_flag:
                 self._log(f"--- 停止: {done_groups}/{total_selected}グループ処理済み ---")
                 self._finish(stopped=True)
@@ -1838,6 +1926,7 @@ class AutoSortDialog(tk.Toplevel):
             logger.error(f"仕分け実行エラー: {e}", exc_info=True)
             self._set_status(f"エラー: {e}")
             self._log(f"エラーが発生しました: {e}")
+            self.after(0, self._close_prog_dialog)
             self.after(0, lambda: self.btn_close.config(state=tk.NORMAL))
 
 
