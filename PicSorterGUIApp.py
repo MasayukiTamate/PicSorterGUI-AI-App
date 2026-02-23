@@ -436,6 +436,78 @@ btn_add_folder.pack(fill=tk.X, pady=(4, 0))
 
 refresh_ref_folder_ui()
 
+# --- 移動先フォルダ設定エリア ---
+frame_move_dest = tk.LabelFrame(koRoot, text="移動先フォルダ", font=("MS Gothic", 9), padx=4, pady=4)
+frame_move_dest.pack(fill=tk.X, padx=8, pady=(4, 0))
+
+var_move_dest = tk.StringVar(value=app_state.move_dest_folder)
+
+frame_move_dest_row = tk.Frame(frame_move_dest)
+frame_move_dest_row.pack(fill=tk.X)
+
+lbl_move_dest = tk.Label(frame_move_dest_row, textvariable=var_move_dest,
+                          font=("MS Gothic", 8), anchor="w", fg="#333333",
+                          bg="#f0f0f0", relief=tk.SUNKEN, padx=4, pady=2)
+lbl_move_dest.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+
+def _update_move_dest_display():
+    path = var_move_dest.get()
+    if path:
+        lbl_move_dest.config(fg="#333333")
+    else:
+        var_move_dest.set("(未設定 - フォルダをD&Dまたは参照)")
+        lbl_move_dest.config(fg="#888888")
+
+_update_move_dest_display()
+
+
+def set_move_dest_folder(path):
+    """移動先フォルダを設定して保存"""
+    path = path.strip().strip('"').strip("'").replace("{", "").replace("}", "")
+    if os.path.isdir(path):
+        app_state.move_dest_folder = path
+        var_move_dest.set(path)
+        lbl_move_dest.config(fg="#333333")
+        save_ref_folders()
+    elif path:
+        messagebox.showwarning("無効なフォルダ", f"フォルダが見つかりません:\n{path}")
+
+
+def browse_move_dest():
+    prev_state = koRoot.attributes("-topmost")
+    koRoot.attributes("-topmost", False)
+    path = filedialog.askdirectory(title="移動先フォルダを選択",
+                                   initialdir=app_state.move_dest_folder or DEFOLDER)
+    koRoot.attributes("-topmost", prev_state)
+    if path:
+        set_move_dest_folder(path)
+
+
+def clear_move_dest():
+    app_state.move_dest_folder = ""
+    var_move_dest.set("")
+    _update_move_dest_display()
+    save_ref_folders()
+
+
+btn_browse_dest = tk.Button(frame_move_dest_row, text="参照", font=("MS Gothic", 8),
+                             command=browse_move_dest, relief="groove", cursor="hand2")
+btn_browse_dest.pack(side=tk.LEFT, padx=(4, 2))
+
+btn_clear_dest = tk.Button(frame_move_dest_row, text="x", font=("MS Gothic", 7),
+                            command=clear_move_dest, relief="flat", fg="red", width=2)
+btn_clear_dest.pack(side=tk.RIGHT)
+
+# ドラッグ&ドロップ対応
+try:
+    lbl_move_dest.drop_target_register(DND_FILES)
+    lbl_move_dest.dnd_bind("<<Drop>>", lambda e: set_move_dest_folder(e.data))
+    frame_move_dest.drop_target_register(DND_FILES)
+    frame_move_dest.dnd_bind("<<Drop>>", lambda e: set_move_dest_folder(e.data))
+except Exception:
+    pass  # tkinterdnd2 が利用不可の場合はスキップ
+
 # 使用中AIモデル表示
 lbl_model_info = tk.Label(koRoot, text="", font=("MS Gothic", 9), fg="#4a90d9", anchor="center")
 lbl_model_info.pack(fill=tk.X, padx=8, pady=(4, 0))

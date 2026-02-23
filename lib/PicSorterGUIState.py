@@ -49,6 +49,9 @@ class AppState:
         # 参照フォルダリスト [{"path": str, "include_subfolders": bool}, ...]
         self.reference_folders = []
 
+        # 移動先フォルダ
+        self.move_dest_folder = ""
+
         # AIモデル設定
         from lib.config_defaults import DEFAULT_AI_MODEL
         self.ai_model = DEFAULT_AI_MODEL
@@ -271,6 +274,7 @@ class AppState:
                 "smart_move_show_thumbnails": self.smart_move_show_thumbnails,
                 "show_splash_tips": self.show_splash_tips,
                 "reference_folders": self.reference_folders,
+                "move_dest_folder": self.move_dest_folder,
                 "ai_model": self.ai_model,
                 "custom_model_path": self.custom_model_path,
                 "custom_model_arch": self.custom_model_arch,
@@ -318,6 +322,8 @@ class AppState:
                     {"path": f["path"], "include_subfolders": f.get("include_subfolders", False)}
                     for f in ref_folders if isinstance(f, dict) and "path" in f
                 ]
+
+                self.move_dest_folder = settings.get("move_dest_folder", "")
 
                 from lib.config_defaults import DEFAULT_AI_MODEL
                 self.ai_model = settings.get("ai_model", DEFAULT_AI_MODEL)
