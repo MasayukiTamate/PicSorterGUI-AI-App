@@ -329,15 +329,15 @@ menubar.add_cascade(label="ヘルプ(H)", menu=help_menu)
 FEEDBACK_EMAIL = "tamaya2473616@gmail.com"
 
 
-def open_send_message_dialog(subject_prefix="", body_prefix=""):
+def open_send_message_dialog(subject_prefix="", body_prefix="", attach_log=False):
     """メッセージ送信ダイアログを開く"""
     import urllib.parse
     import webbrowser
-    import traceback as tb_module
+    from lib.PicSorterGUILogger import get_full_log_path, get_log_dir
 
     win = tk.Toplevel(koRoot)
     win.title("メッセージを送信")
-    win.geometry("440x350")
+    win.geometry("480x420")
     win.attributes("-topmost", True)
     win.resizable(True, True)
     win.transient(koRoot)
@@ -351,32 +351,83 @@ def open_send_message_dialog(subject_prefix="", body_prefix=""):
     tk.Entry(win, textvariable=var_subject, font=("MS Gothic", 9)).pack(
         fill=tk.X, padx=10)
 
+    # ログ添付チェック
+    var_attach_log = tk.BooleanVar(value=attach_log)
+    log_path = get_full_log_path()
+
+    if log_path and os.path.exists(log_path):
+        log_frame = tk.Frame(win)
+        log_frame.pack(fill=tk.X, padx=10, pady=(6, 0))
+        tk.Checkbutton(log_frame, text="ログファイルを本文に含める",
+                       variable=var_attach_log, font=("MS Gothic", 8)
+                       ).pack(side=tk.LEFT)
+        tk.Button(log_frame, text="ログフォルダを開く", font=("MS Gothic", 8),
+                  relief="groove",
+                  command=lambda: os.startfile(get_log_dir())
+                  ).pack(side=tk.RIGHT)
+
     # 本文
     tk.Label(win, text="本文:", font=("MS Gothic", 9)).pack(anchor="w", padx=10, pady=(8, 2))
-    txt_body = tk.Text(win, font=("MS Gothic", 9), height=10, wrap=tk.WORD)
+    txt_body = tk.Text(win, font=("MS Gothic", 9), height=12, wrap=tk.WORD)
     txt_body.pack(fill=tk.BOTH, expand=True, padx=10)
     if body_prefix:
         txt_body.insert("1.0", body_prefix)
 
-    def send_via_mailto():
-        subject = var_subject.get()
+    def _build_body():
+        """本文を組み立て（ログ添付オプション対応）"""
         body = txt_body.get("1.0", tk.END).strip()
+        if var_attach_log.get() and log_path and os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_content = f.read()
+                # 本文に既にログが含まれていなければ追加
+                if "--- 全ログ ---" not in body:
+                    body += f"\n\n--- 全ログ ({os.path.basename(log_path)}) ---\n"
+                    body += log_content
+            except Exception:
+                pass
+        return body
+
+    def send_via_mailto():
+        body = _build_body()
+        subject = var_subject.get()
         if not body:
             messagebox.showwarning("入力エラー", "本文を入力してください", parent=win)
             return
+        # mailto URLは長さ制限があるため、長い場合はクリップボードを案内
         params = urllib.parse.urlencode({"subject": subject, "body": body},
                                         quote_via=urllib.parse.quote)
         mailto_url = f"mailto:{FEEDBACK_EMAIL}?{params}"
-        try:
-            webbrowser.open(mailto_url)
-            win.destroy()
-        except Exception as e:
-            messagebox.showerror("エラー",
-                f"メールクライアントを開けませんでした:\n{e}", parent=win)
+        if len(mailto_url) > 2000:
+            # URLが長すぎる場合はクリップボードにコピーしてメールクライアントを開く
+            text = f"To: {FEEDBACK_EMAIL}\nSubject: {subject}\n\n{body}"
+            win.clipboard_clear()
+            win.clipboard_append(text)
+            short_params = urllib.parse.urlencode(
+                {"subject": subject,
+                 "body": "（本文が長いためクリップボードにコピーしました。貼り付けてください）"},
+                quote_via=urllib.parse.quote)
+            short_url = f"mailto:{FEEDBACK_EMAIL}?{short_params}"
+            try:
+                webbrowser.open(short_url)
+                messagebox.showinfo("情報",
+                    "本文が長いためクリップボードにコピーしました。\n"
+                    "メール本文に貼り付けてください。", parent=win)
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("エラー",
+                    f"メールクライアントを開けませんでした:\n{e}", parent=win)
+        else:
+            try:
+                webbrowser.open(mailto_url)
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("エラー",
+                    f"メールクライアントを開けませんでした:\n{e}", parent=win)
 
     def copy_to_clipboard():
+        body = _build_body()
         subject = var_subject.get()
-        body = txt_body.get("1.0", tk.END).strip()
         text = f"To: {FEEDBACK_EMAIL}\nSubject: {subject}\n\n{body}"
         win.clipboard_clear()
         win.clipboard_append(text)
@@ -395,8 +446,8 @@ def open_send_message_dialog(subject_prefix="", body_prefix=""):
 
 def send_error_report(error_info=""):
     """エラー情報を含むメッセージ送信ダイアログを開く"""
-    import traceback
     import platform
+    from lib.PicSorterGUILogger import get_full_log_path, get_log_dir
 
     body = "--- エラー情報 ---\n"
     body += f"OS: {platform.system()} {platform.release()}\n"
@@ -404,24 +455,37 @@ def send_error_report(error_info=""):
     if error_info:
         body += f"\n{error_info}\n"
 
-    # 最新のログファイルから末尾を取得
-    try:
-        from datetime import datetime
-        log_path = os.path.join("logs",
-            f"error_{datetime.now().strftime('%Y%m%d')}.log")
-        if os.path.exists(log_path):
+    # 全レベルログから末尾を取得
+    log_path = get_full_log_path()
+    if log_path and os.path.exists(log_path):
+        try:
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            tail = lines[-30:] if len(lines) > 30 else lines
-            body += "\n--- 最近のログ ---\n"
+            tail = lines[-50:] if len(lines) > 50 else lines
+            body += "\n--- アプリログ (最新50行) ---\n"
             body += "".join(tail)
+        except Exception:
+            pass
+
+    # エラーログからも取得
+    try:
+        from datetime import datetime
+        err_log = os.path.join(get_log_dir(),
+            f"error_{datetime.now().strftime('%Y%m%d')}.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r", encoding="utf-8") as f:
+                err_lines = f.readlines()
+            err_tail = err_lines[-30:] if len(err_lines) > 30 else err_lines
+            body += "\n--- エラーログ (最新30行) ---\n"
+            body += "".join(err_tail)
     except Exception:
         pass
 
     body += "\n--- ここに詳細を記入してください ---\n\n"
     open_send_message_dialog(
         subject_prefix="[PicSorterGUI] エラー報告",
-        body_prefix=body)
+        body_prefix=body,
+        attach_log=True)
 
 
 help_menu.add_command(label="フィードバックを送る...", command=open_send_message_dialog)

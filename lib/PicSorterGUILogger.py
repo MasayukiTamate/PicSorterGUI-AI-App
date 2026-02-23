@@ -57,10 +57,20 @@ class LoggerManager:
         )
         file_handler.setFormatter(file_formatter)
 
+        # 全レベルログ（INFO以上）をファイルに記録
+        cls._full_log_path = os.path.join(
+            cls._log_dir,
+            f"app_{datetime.now().strftime('%Y%m%d')}.log"
+        )
+        full_handler = logging.FileHandler(cls._full_log_path, encoding='utf-8')
+        full_handler.setLevel(logging.DEBUG)
+        full_handler.setFormatter(file_formatter)
+
         root_logger = logging.getLogger()
         root_logger.setLevel(log_level)
         root_logger.addHandler(console_handler)
         root_logger.addHandler(file_handler)
+        root_logger.addHandler(full_handler)
 
         if DEFAULT_ENABLE_EMAIL_LOGGING and DEFAULT_SENDER_EMAIL and DEFAULT_RECIPIENT_EMAIL:
             try:
@@ -107,9 +117,27 @@ class LoggerManager:
                 handler.setLevel(logging.INFO)
 
 
+    @classmethod
+    def get_full_log_path(cls):
+        """全レベルログファイルのパスを返す"""
+        return getattr(cls, '_full_log_path', None)
+
+    @classmethod
+    def get_log_dir(cls):
+        return cls._log_dir
+
+
 def setup_logging(debug_mode=False):
     LoggerManager.setup(debug_mode=debug_mode)
 
 
 def get_logger(name):
     return LoggerManager.get_logger(name)
+
+
+def get_full_log_path():
+    return LoggerManager.get_full_log_path()
+
+
+def get_log_dir():
+    return LoggerManager.get_log_dir()

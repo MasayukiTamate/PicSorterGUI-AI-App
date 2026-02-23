@@ -800,18 +800,26 @@ class GroupDetailWindow(tk.Toplevel):
 
         exec_row = tk.Frame(exec_frame)
         exec_row.pack(fill=tk.X)
-        # フォルダ名入力
+        # フォルダ名入力（履歴プルダウン付き）
         tk.Label(exec_row, text="フォルダ名:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
         self._var_folder_name = tk.StringVar(
             value=f"グループ_{self.group['group_num']:03d}")
-        tk.Entry(exec_row, textvariable=self._var_folder_name,
-                 font=("MS Gothic", 8), width=16).pack(side=tk.LEFT, padx=(2, 8))
+        folder_hist = getattr(self.parent_dialog, '_folder_name_history', [])
+        self._folder_cb = ttk.Combobox(exec_row, textvariable=self._var_folder_name,
+                 font=("MS Gothic", 8), width=16, values=folder_hist)
+        self._folder_cb.pack(side=tk.LEFT, padx=(2, 8))
+        self._folder_cb.bind("<Button-1>", lambda e:
+            self._folder_cb.config(values=getattr(self.parent_dialog, '_folder_name_history', [])))
 
-        # 単語入力
+        # 単語入力（履歴プルダウン付き）
         tk.Label(exec_row, text="単語:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
         self._var_word = tk.StringVar(value="")
-        tk.Entry(exec_row, textvariable=self._var_word,
-                 font=("MS Gothic", 8), width=12).pack(side=tk.LEFT, padx=(2, 4))
+        word_hist = getattr(self.parent_dialog, '_word_history', [])
+        self._word_cb = ttk.Combobox(exec_row, textvariable=self._var_word,
+                 font=("MS Gothic", 8), width=12, values=word_hist)
+        self._word_cb.pack(side=tk.LEFT, padx=(2, 4))
+        self._word_cb.bind("<Button-1>", lambda e:
+            self._word_cb.config(values=getattr(self.parent_dialog, '_word_history', [])))
 
         exec_row2 = tk.Frame(exec_frame)
         exec_row2.pack(fill=tk.X, pady=(4, 0))
@@ -820,7 +828,10 @@ class GroupDetailWindow(tk.Toplevel):
         tk.Button(exec_row2, text="リネーム", font=("MS Gothic", 8),
                   command=lambda: self._execute_group("rename")).pack(side=tk.LEFT, padx=(0, 4))
         tk.Button(exec_row2, text="移動+リネーム", font=("MS Gothic", 8),
-                  command=lambda: self._execute_group("both")).pack(side=tk.LEFT)
+                  command=lambda: self._execute_group("both")).pack(side=tk.LEFT, padx=(0, 8))
+        self._var_close_after = tk.BooleanVar(value=True)
+        tk.Checkbutton(exec_row2, text="実行後に閉じる", variable=self._var_close_after,
+                       font=("MS Gothic", 8)).pack(side=tk.LEFT)
 
         # 下部ボタン
         btn_frame = tk.Frame(self)
@@ -835,12 +846,13 @@ class GroupDetailWindow(tk.Toplevel):
                   command=self._close_without_apply).pack(side=tk.LEFT, padx=4)
 
     def _calc_cols(self):
-        """ウィンドウ幅とサムネイルサイズから列数を計算"""
+        """ウィンドウ幅とサムネイルサイズから列数を計算（全体が収まるように）"""
         try:
             canvas_w = self._canvas.winfo_width()
             if canvas_w < 10:
                 canvas_w = self.winfo_width() - 40
-            cell_w = self._thumb_size + 20  # サムネイル + パディング
+            # セル幅 = サムネイル + padx*2(2+2) + 余白
+            cell_w = self._thumb_size + 16
             cols = max(1, canvas_w // cell_w)
         except Exception:
             cols = 4
@@ -859,6 +871,16 @@ class GroupDetailWindow(tk.Toplevel):
         if self._member_vars:
             for path, var in zip(self._prev_members, self._member_vars):
                 old_check_map[path] = var.get()
+
+        # 類似度でソート（シードを先頭、残りは降順）
+        if self._all_similarities and self._seed_path:
+            members = list(self.group["members"])
+            if self._seed_path in members:
+                members.remove(self._seed_path)
+            members.sort(key=lambda p: self._all_similarities.get(p, 0),
+                         reverse=True)
+            members.insert(0, self._seed_path)
+            self.group["members"] = members
 
         self._prev_members = list(self.group["members"])
 
@@ -1136,6 +1158,16 @@ class GroupDetailWindow(tk.Toplevel):
                 if parent.refresh_callback:
                     self.after(0, lambda: parent.refresh_callback(parent.folder))
 
+                # 使用した名前を親ダイアログの履歴に追加
+                if hasattr(parent, '_folder_name_history'):
+                    fn = folder_name.strip() if folder_name else ""
+                    if fn and fn not in parent._folder_name_history:
+                        parent._folder_name_history.append(fn)
+                if hasattr(parent, '_word_history') and rename_config:
+                    wd = rename_config["word"].strip()
+                    if wd and wd not in parent._word_history:
+                        parent._word_history.append(wd)
+
                 # 結果メッセージ組み立て
                 lines = [f"グループ {self.group['group_num']} の処理が完了しました\n"]
                 if dest_folder_name:
@@ -1146,9 +1178,18 @@ class GroupDetailWindow(tk.Toplevel):
                     lines.append(f"リネーム: {rename_count}枚")
                 result_msg = "\n".join(lines)
 
+                close_after = self._var_close_after.get()
+
                 def _on_done():
                     prog.destroy()
-                    messagebox.showinfo("完了", result_msg, parent=self)
+                    if close_after:
+                        # 適用せずに閉じる（既に実行済みなので元に戻す必要なし）
+                        if hasattr(self.parent_dialog, '_update_group_counts'):
+                            self.parent_dialog._update_group_counts()
+                        messagebox.showinfo("完了", result_msg)
+                        self.destroy()
+                    else:
+                        messagebox.showinfo("完了", result_msg, parent=self)
                 self.after(0, _on_done)
             except Exception as e:
                 def _on_err():
@@ -1207,6 +1248,9 @@ class AutoSortDialog(tk.Toplevel):
         self._thumb_refs = []
         # 全グループ（確認画面で表示中）
         self.all_groups = []
+        # 入力履歴（セッション中保持）
+        self._folder_name_history = []
+        self._word_history = []
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1222,8 +1266,8 @@ class AutoSortDialog(tk.Toplevel):
         frame_thresh = tk.LabelFrame(self, text="類似度しきい値", font=("MS Gothic", 9), padx=8, pady=4)
         frame_thresh.pack(fill=tk.X, padx=12, pady=(8, 0))
 
-        self.var_threshold = tk.DoubleVar(value=0.80)
-        self.lbl_thresh_val = tk.Label(frame_thresh, text="80%",
+        self.var_threshold = tk.DoubleVar(value=0.60)
+        self.lbl_thresh_val = tk.Label(frame_thresh, text="60%",
                                        font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
         self.lbl_thresh_val.pack(side=tk.RIGHT)
         self.scale = tk.Scale(frame_thresh, variable=self.var_threshold,
@@ -1313,10 +1357,6 @@ class AutoSortDialog(tk.Toplevel):
     def _on_close(self):
         if self._thread and self._thread.is_alive():
             self.stop_flag = True
-        try:
-            self.unbind_all("<MouseWheel>")
-        except Exception:
-            pass
         self.destroy()
 
     def _create_group_folder(self, group_num):
@@ -1526,6 +1566,12 @@ class AutoSortDialog(tk.Toplevel):
             self._log(f"エラーが発生しました: {e}")
             self.after(0, lambda: self.btn_close.config(state=tk.NORMAL))
 
+    def _bind_wheel_recursive(self, widget, handler):
+        """ウィジェットとその全子孫にMouseWheelをバインド"""
+        widget.bind("<MouseWheel>", handler)
+        for child in widget.winfo_children():
+            self._bind_wheel_recursive(child, handler)
+
     def _load_thumbnail(self, path, size=(64, 64)):
         """サムネイル画像を読み込んでImageTk.PhotoImageを返す"""
         try:
@@ -1638,10 +1684,13 @@ class AutoSortDialog(tk.Toplevel):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # マウスホイールスクロール
+        # マウスホイールスクロール（このウィンドウ限定）
         def _on_mousewheel(event):
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        self.bind_all("<MouseWheel>", _on_mousewheel)
+        self._confirm_wheel_handler = _on_mousewheel
+        self._bind_wheel_recursive(self._confirm_frame, _on_mousewheel)
+        self._canvas.bind("<MouseWheel>", _on_mousewheel)
+        self._inner_frame.bind("<MouseWheel>", _on_mousewheel)
 
         # グループ一覧表示
         self._group_vars = []
@@ -1670,16 +1719,24 @@ class AutoSortDialog(tk.Toplevel):
             cb.pack(side=tk.LEFT)
             self._group_checkbuttons.append(cb)
 
-            # フォルダ名入力欄
+            # フォルダ名入力欄（履歴プルダウン付き）
             folder_var = tk.StringVar(value=f"グループ_{group['group_num']:03d}")
-            tk.Entry(row, textvariable=folder_var, font=("MS Gothic", 9),
-                     width=14).pack(side=tk.LEFT, padx=(4, 2))
+            folder_cb = ttk.Combobox(row, textvariable=folder_var,
+                                     font=("MS Gothic", 9), width=14,
+                                     values=self._folder_name_history)
+            folder_cb.pack(side=tk.LEFT, padx=(4, 2))
+            folder_cb.bind("<Button-1>", lambda e, cb=folder_cb:
+                           cb.config(values=self._folder_name_history))
             self._group_folder_entries.append(folder_var)
 
-            # 単語入力欄
+            # 単語入力欄（履歴プルダウン付き）
             word_var = tk.StringVar(value="")
-            tk.Entry(row, textvariable=word_var, font=("MS Gothic", 9),
-                     width=10).pack(side=tk.LEFT, padx=(2, 4))
+            word_cb = ttk.Combobox(row, textvariable=word_var,
+                                   font=("MS Gothic", 9), width=10,
+                                   values=self._word_history)
+            word_cb.pack(side=tk.LEFT, padx=(2, 4))
+            word_cb.bind("<Button-1>", lambda e, cb=word_cb:
+                         cb.config(values=self._word_history))
             self._group_word_entries.append(word_var)
 
             # 詳細ボタン
@@ -1687,6 +1744,9 @@ class AutoSortDialog(tk.Toplevel):
                                    command=lambda g=group: self._open_group_detail(g),
                                    bg="#dde4f0", relief=tk.FLAT, cursor="hand2")
             btn_detail.pack(side=tk.RIGHT, padx=(0, 4), pady=2)
+
+            # 行内の全ウィジェットにホイールバインド
+            self._bind_wheel_recursive(row, self._confirm_wheel_handler)
 
         # 閾値スライダーを有効化
         self.scale.config(state=tk.NORMAL)
@@ -1774,10 +1834,6 @@ class AutoSortDialog(tk.Toplevel):
             messagebox.showinfo("処理中", "現在処理中です。完了までお待ちください。", parent=self)
             return
         # 確認フレームを破棄
-        try:
-            self.unbind_all("<MouseWheel>")
-        except Exception:
-            pass
         if hasattr(self, '_confirm_frame') and self._confirm_frame.winfo_exists():
             self._confirm_frame.destroy()
         self._thumb_refs = []
@@ -1870,10 +1926,6 @@ class AutoSortDialog(tk.Toplevel):
         }
 
         # 確認フレームを削除してログ表示に戻す
-        try:
-            self.unbind_all("<MouseWheel>")
-        except Exception:
-            pass
         self._confirm_frame.destroy()
         self._thumb_refs = []
         self._log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
@@ -2019,6 +2071,15 @@ class AutoSortDialog(tk.Toplevel):
                             self._log(f"  リネーム失敗: {os.path.basename(fp)} ({e})")
 
                 done_groups += 1
+
+            # 使用した名前を履歴に追加
+            for group in self._selected_groups:
+                fn = group.get("folder_name", "").strip()
+                if fn and fn not in self._folder_name_history:
+                    self._folder_name_history.append(fn)
+                wd = group.get("word", "").strip()
+                if wd and wd not in self._word_history:
+                    self._word_history.append(wd)
 
             if self.refresh_callback:
                 self.after(0, lambda: self.refresh_callback(self.folder))
