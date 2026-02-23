@@ -1520,6 +1520,7 @@ class AutoSortDialog(tk.Toplevel):
                 row, variable=var, bg="#f0f4ff", activebackground="#f0f4ff",
                 text=f"{len(group['members'])}枚",
                 font=("MS Gothic", 9), anchor="w",
+                command=self._update_selected_file_count,
             )
             cb.pack(side=tk.LEFT)
             self._group_checkbuttons.append(cb)
@@ -1552,12 +1553,15 @@ class AutoSortDialog(tk.Toplevel):
         self.btn_reanalyze = tk.Button(self._btn_frame, text="再分析", width=10,
                                        command=self._start_reanalyze, font=("MS Gothic", 10))
         self.btn_reanalyze.pack(side=tk.LEFT, padx=5)
-        self.btn_action = tk.Button(self._btn_frame, text="実行", width=10,
+        self.btn_action = tk.Button(self._btn_frame, text="実行", width=14,
                                     command=self._execute_selected, font=("MS Gothic", 10))
         self.btn_action.pack(side=tk.LEFT, padx=5)
         self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
                                    command=self._on_close, font=("MS Gothic", 10))
         self.btn_close.pack(side=tk.LEFT, padx=5)
+
+        # 初回の選択ファイル数表示
+        self._update_selected_file_count()
 
         # ウィンドウサイズ調整
         self.geometry("520x620")
@@ -1598,6 +1602,17 @@ class AutoSortDialog(tk.Toplevel):
             return
         for group, cb_widget in zip(self.all_groups, self._group_checkbuttons):
             cb_widget.config(text=f"{len(group['members'])}枚")
+        self._update_selected_file_count()
+
+    def _update_selected_file_count(self):
+        """選択中グループの合計ファイル数を実行ボタンに表示"""
+        if not hasattr(self, 'btn_action') or not hasattr(self, '_group_vars'):
+            return
+        total = 0
+        for group, var in zip(self.all_groups, self._group_vars):
+            if var.get():
+                total += len(group["members"])
+        self.btn_action.config(text=f"実行 ({total}枚)")
 
     def _open_group_detail(self, group):
         """グループ詳細ウィンドウを開く"""
@@ -1606,6 +1621,7 @@ class AutoSortDialog(tk.Toplevel):
     def _set_all_checks(self, value):
         for var in self._group_vars:
             var.set(value)
+        self._update_selected_file_count()
 
     def _start_reanalyze(self):
         """再分析を開始（全画像対象でグローバル再クラスタリング）"""
