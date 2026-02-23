@@ -668,13 +668,118 @@ class SimilarityMoveDialog(tk.Toplevel):
                 pass
 
 
+class GroupDetailWindow(tk.Toplevel):
+    """グループ詳細ウィンドウ: グループ内の全画像をサムネイルで表示し、再仕分けが可能"""
+
+    def __init__(self, parent_dialog, group):
+        super().__init__(parent_dialog)
+        self.parent_dialog = parent_dialog
+        self.group = group
+        self._thumb_refs = []
+
+        self.title(f"グループ {group['group_num']} ({len(group['members'])}枚)")
+        self.geometry("480x520")
+        self.attributes("-topmost", True)
+        self.resizable(True, True)
+        self.transient(parent_dialog)
+
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _build_ui(self):
+        # ヘッダー
+        header = tk.Frame(self)
+        header.pack(fill=tk.X, padx=10, pady=(8, 4))
+        tk.Label(header, text=f"グループ {self.group['group_num']}: {len(self.group['members'])}枚",
+                 font=("MS Gothic", 11, "bold"), fg="#0055cc").pack(side=tk.LEFT)
+
+        # 再仕分け用の閾値コントロール
+        thresh_frame = tk.LabelFrame(self, text="閾値を変更して再仕分け", font=("MS Gothic", 9), padx=8, pady=4)
+        thresh_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
+
+        self.var_threshold = tk.DoubleVar(value=self.parent_dialog.var_threshold.get())
+        self.lbl_thresh_val = tk.Label(thresh_frame,
+                                       text=f"{self.var_threshold.get()*100:.0f}%",
+                                       font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
+        self.lbl_thresh_val.pack(side=tk.RIGHT)
+
+        self.scale = tk.Scale(thresh_frame, variable=self.var_threshold,
+                              from_=0.20, to=1.0, resolution=0.01,
+                              orient=tk.HORIZONTAL, showvalue=False,
+                              command=lambda v: self.lbl_thresh_val.config(text=f"{float(v)*100:.0f}%"))
+        self.scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        tk.Button(thresh_frame, text="再仕分け", font=("MS Gothic", 9, "bold"),
+                  command=self._request_reanalyze, fg="#cc3300").pack(side=tk.RIGHT, padx=(4, 0))
+
+        tk.Label(self, text="※ 全画像を対象にグローバル再仕分けします（他の群にも影響）",
+                 font=("MS Gothic", 8), fg="#888888").pack(padx=10, anchor="w")
+
+        # サムネイル一覧（スクロール可能）
+        list_frame = tk.Frame(self, bd=1, relief=tk.SUNKEN)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 8))
+
+        canvas = tk.Canvas(list_frame, bg="#ffffff", highlightthickness=0)
+        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=canvas.yview)
+        inner = tk.Frame(canvas, bg="#ffffff")
+
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self.bind("<MouseWheel>", _on_mousewheel)
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        inner.bind("<MouseWheel>", _on_mousewheel)
+
+        # 画像をグリッド表示
+        cols = 4
+        for i, path in enumerate(self.group["members"]):
+            r, c = divmod(i, cols)
+            cell = tk.Frame(inner, bg="#ffffff", padx=2, pady=2)
+            cell.grid(row=r, column=c, sticky="nsew")
+            cell.bind("<MouseWheel>", _on_mousewheel)
+
+            try:
+                with Image.open(path) as img:
+                    img.thumbnail((100, 100))
+                    tk_img = ImageTk.PhotoImage(img)
+                    self._thumb_refs.append(tk_img)
+                    lbl = tk.Label(cell, image=tk_img, bg="#ffffff")
+                    lbl.pack()
+                    lbl.bind("<MouseWheel>", _on_mousewheel)
+            except Exception:
+                tk.Label(cell, text="?", bg="#eeeeee", width=12, height=6).pack()
+
+            name = os.path.basename(path)
+            if len(name) > 14:
+                name = name[:11] + "..."
+            lbl_name = tk.Label(cell, text=name, font=("MS Gothic", 7),
+                                bg="#ffffff", fg="#666666")
+            lbl_name.pack()
+            lbl_name.bind("<MouseWheel>", _on_mousewheel)
+
+        for c in range(cols):
+            inner.columnconfigure(c, weight=1)
+
+    def _request_reanalyze(self):
+        """親ダイアログにグローバル再仕分けを依頼"""
+        new_threshold = self.var_threshold.get()
+        self.destroy()
+        self.parent_dialog._reanalyze_global(new_threshold)
+
+
 class AutoSortDialog(tk.Toplevel):
     """オート仕分けダイアログ: フォルダ内の全画像が群体/孤立になるまで自動処理する"""
 
     def __init__(self, parent, folder, move_callback, refresh_callback):
         super().__init__(parent)
         self.title("オート仕分け")
-        self.geometry("460x480")
+        self.geometry("520x560")
         self.attributes("-topmost", True)
         self.resizable(False, False)
 
@@ -684,16 +789,22 @@ class AutoSortDialog(tk.Toplevel):
         self.stop_flag = False
         self._thread = None
 
+        # ベクトルキャッシュ（初回計算後に保持）
+        self._vec_cache = None
+        # サムネイル参照保持（GC防止）
+        self._thumb_refs = []
+        # 全グループ（確認画面で表示中）
+        self.all_groups = []
+
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.transient(parent)
-        self.after(300, self._start)
 
     def _build_ui(self):
         tk.Label(self, text=f"フォルダ: {os.path.basename(self.folder)}",
                  font=("MS Gothic", 10, "bold"), anchor="w", fg="#333333").pack(fill=tk.X, padx=12, pady=(10, 0))
         tk.Label(self, text=self.folder, font=("MS Gothic", 8), anchor="w",
-                 fg="#888888", wraplength=430).pack(fill=tk.X, padx=12)
+                 fg="#888888", wraplength=490).pack(fill=tk.X, padx=12)
 
         # 類似度しきい値
         frame_thresh = tk.LabelFrame(self, text="類似度しきい値", font=("MS Gothic", 9), padx=8, pady=4)
@@ -704,7 +815,7 @@ class AutoSortDialog(tk.Toplevel):
                                        font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
         self.lbl_thresh_val.pack(side=tk.RIGHT)
         self.scale = tk.Scale(frame_thresh, variable=self.var_threshold,
-                              from_=0.5, to=1.0, resolution=0.01,
+                              from_=0.20, to=1.0, resolution=0.01,
                               orient=tk.HORIZONTAL, showvalue=False,
                               command=lambda v: self.lbl_thresh_val.config(text=f"{float(v)*100:.0f}%"))
         self.scale.pack(fill=tk.X, expand=True)
@@ -726,29 +837,28 @@ class AutoSortDialog(tk.Toplevel):
         self.var_groups    = stat_col("グループ", "#0055cc")
         self.var_isolated  = stat_col("孤立", "#888888")
 
-        self.lbl_status = tk.Label(self, text="開始準備中...",
+        self.lbl_status = tk.Label(self, text="閾値を設定して「分析開始」を押してください",
                                    font=("MS Gothic", 9), fg="#0055aa", anchor="w")
         self.lbl_status.pack(fill=tk.X, padx=12)
 
         # ログ
-        frame_log = tk.Frame(self)
-        frame_log.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
-        self.txt_log = tk.Text(frame_log, font=("MS Gothic", 8), state=tk.DISABLED,
+        self._log_frame = tk.Frame(self)
+        self._log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
+        self.txt_log = tk.Text(self._log_frame, font=("MS Gothic", 8), state=tk.DISABLED,
                                bg="#f8f8f8", relief=tk.SUNKEN, bd=1)
-        sb = tk.Scrollbar(frame_log, command=self.txt_log.yview)
+        sb = tk.Scrollbar(self._log_frame, command=self.txt_log.yview)
         self.txt_log.config(yscrollcommand=sb.set)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.txt_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # ボタン
-        btn_frame = tk.Frame(self)
-        btn_frame.pack(pady=10)
-        self.btn_stop = tk.Button(btn_frame, text="停止", width=10,
-                                  command=self._stop, font=("MS Gothic", 10))
-        self.btn_stop.pack(side=tk.LEFT, padx=5)
-        self.btn_close = tk.Button(btn_frame, text="閉じる", width=10,
-                                   command=self._on_close, font=("MS Gothic", 10),
-                                   state=tk.DISABLED)
+        self._btn_frame = tk.Frame(self)
+        self._btn_frame.pack(pady=10)
+        self.btn_action = tk.Button(self._btn_frame, text="分析開始", width=12,
+                                    command=self._start_analysis, font=("MS Gothic", 10))
+        self.btn_action.pack(side=tk.LEFT, padx=5)
+        self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
+                                   command=self._on_close, font=("MS Gothic", 10))
         self.btn_close.pack(side=tk.LEFT, padx=5)
 
     def _log(self, msg):
@@ -772,20 +882,26 @@ class AutoSortDialog(tk.Toplevel):
 
     def _stop(self):
         self.stop_flag = True
-        self.after(0, lambda: self.btn_stop.config(state=tk.DISABLED))
+        self.after(0, lambda: self.btn_action.config(state=tk.DISABLED))
         self._set_status("停止中...")
         self._log("--- 停止要求を受け付けました ---")
 
-    def _start(self):
+    def _start_analysis(self):
+        """分析を開始（初回はベクトル計算+クラスタリング、2回目以降はクラスタリングのみ）"""
         self.stop_flag = False
         self.scale.config(state=tk.DISABLED)
-        self.btn_stop.config(state=tk.NORMAL)
+        self.btn_action.config(text="停止", command=self._stop, state=tk.NORMAL)
+        self.btn_close.config(state=tk.DISABLED)
         self._thread = threading.Thread(target=self._run_sort, daemon=True)
         self._thread.start()
 
     def _on_close(self):
         if self._thread and self._thread.is_alive():
             self.stop_flag = True
+        try:
+            self.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
         self.destroy()
 
     def _create_group_folder(self, group_num):
@@ -803,8 +919,9 @@ class AutoSortDialog(tk.Toplevel):
             self._log(f"--- {msg} ---")
 
         def _ui():
-            self.btn_stop.config(state=tk.DISABLED)
-            self.btn_close.config(state=tk.NORMAL)
+            self.btn_action.config(text="分析開始", command=self._start_analysis,
+                                   state=tk.NORMAL)
+            self.btn_close.config(text="閉じる", state=tk.NORMAL)
             self.scale.config(state=tk.NORMAL)
         self.after(0, _ui)
 
@@ -812,68 +929,86 @@ class AutoSortDialog(tk.Toplevel):
         try:
             from PicSorterGUILogic import calculate_file_hash, load_vectors, save_vectors
 
-            self._set_status("画像を読み込み中...")
-            all_items = os.listdir(self.folder)
-            files = GetGazoFiles(all_items, self.folder)
-            total = len(files)
+            # ベクトル計算（初回のみ）
+            if self._vec_cache is None:
+                self._set_status("画像を読み込み中...")
+                all_items = os.listdir(self.folder)
+                files = GetGazoFiles(all_items, self.folder)
+                total = len(files)
 
-            if total == 0:
-                self._set_status("画像がありません")
-                self._log("フォルダに対象画像がありませんでした")
-                self._finish()
-                return
-
-            self._set_stats(total=total, processed=0, groups=0, isolated=0)
-            self._log(f"対象画像: {total}枚")
-
-            self._set_status("AIモデルを準備中...")
-            engine = VectorEngine.get_instance()
-
-            try:
-                vectors = load_vectors()
-            except Exception:
-                vectors = {}
-
-            full_paths = [os.path.join(self.folder, f) for f in files]
-            hash_map = {}
-            vec_map = {}
-
-            for i, path in enumerate(full_paths):
-                if self.stop_flag:
-                    self._finish(stopped=True)
+                if total == 0:
+                    self._set_status("画像がありません")
+                    self._log("フォルダに対象画像がありませんでした")
+                    self._finish()
                     return
-                self._set_status(f"ベクトル計算中... {i+1}/{total}")
-                try:
-                    h = calculate_file_hash(path)
-                    hash_map[path] = h
-                    if h not in vectors:
-                        vec = engine.get_image_feature(path)
-                        if vec:
-                            vectors[h] = vec
-                    if h in vectors:
-                        vec_map[h] = vectors[h]
-                except Exception as e:
-                    self._log(f"スキップ: {os.path.basename(path)} ({e})")
 
-            try:
-                save_vectors(vectors)
-            except Exception:
-                pass
+                self._set_stats(total=total, processed=0, groups=0, isolated=0)
+                self._log(f"対象画像: {total}枚")
+
+                self._set_status("AIモデルを準備中...")
+                engine = VectorEngine.get_instance()
+
+                try:
+                    vectors = load_vectors()
+                except Exception:
+                    vectors = {}
+
+                full_paths = [os.path.join(self.folder, f) for f in files]
+                hash_map = {}
+                vec_map = {}
+
+                for i, path in enumerate(full_paths):
+                    if self.stop_flag:
+                        self._finish(stopped=True)
+                        return
+                    self._set_status(f"ベクトル計算中... {i+1}/{total}")
+                    try:
+                        h = calculate_file_hash(path)
+                        hash_map[path] = h
+                        if h not in vectors:
+                            vec = engine.get_image_feature(path)
+                            if vec:
+                                vectors[h] = vec
+                        if h in vectors:
+                            vec_map[h] = vectors[h]
+                    except Exception as e:
+                        self._log(f"スキップ: {os.path.basename(path)} ({e})")
+
+                try:
+                    save_vectors(vectors)
+                except Exception:
+                    pass
+
+                self._vec_cache = {
+                    "hash_map": hash_map,
+                    "vec_map": vec_map,
+                    "engine": engine,
+                    "full_paths": full_paths,
+                }
+            else:
+                self._log("キャッシュ済みベクトルを使用")
+
+            # キャッシュからデータ取得
+            hash_map = self._vec_cache["hash_map"]
+            vec_map = self._vec_cache["vec_map"]
+            engine = self._vec_cache["engine"]
+            full_paths = self._vec_cache["full_paths"]
 
             threshold = self.var_threshold.get()
-            self._log(f"しきい値: {threshold*100:.0f}%  ベクトル計算済み: {len(vec_map)}枚")
+            self._log(f"しきい値: {threshold*100:.0f}%  対象: {len(full_paths)}枚")
 
-            # 貪欲クラスタリング
+            # 貪欲クラスタリング（全画像対象）
             unprocessed = list(full_paths)
             unprocessed_set = set(full_paths)
             group_count = 0
             isolated_count = 0
             processed_count = 0
+            groups = []
 
-            self._set_status("自動仕分け中...")
+            self._set_stats(total=len(full_paths), processed=0, groups=0, isolated=0)
+            self._set_status("グループ分析中...")
 
             while unprocessed and not self.stop_flag:
-                # 先頭から処理済みをスキップ
                 while unprocessed and unprocessed[0] not in unprocessed_set:
                     unprocessed.pop(0)
                 if not unprocessed:
@@ -891,7 +1026,6 @@ class AutoSortDialog(tk.Toplevel):
 
                 seed_vec = vec_map[seed_hash]
 
-                # 残り画像から類似するものを全て収集
                 similar_paths = []
                 for candidate in unprocessed:
                     if candidate not in unprocessed_set:
@@ -906,20 +1040,15 @@ class AutoSortDialog(tk.Toplevel):
 
                 if similar_paths:
                     group_count += 1
-                    group_folder = self._create_group_folder(group_count)
                     group_members = [seed_path] + similar_paths
-                    self._log(f"グループ {group_count}: {len(group_members)}枚 → グループ_{group_count:03d}")
+                    groups.append({
+                        "group_num": group_count,
+                        "members": group_members,
+                    })
+                    self._log(f"グループ {group_count}: {len(group_members)}枚")
 
-                    for fp in group_members:
-                        if self.stop_flag:
-                            break
+                    for fp in similar_paths:
                         unprocessed_set.discard(fp)
-                        try:
-                            self.move_callback(fp, group_folder, refresh=False)
-                        except TypeError:
-                            self.move_callback(fp, group_folder)
-                        except Exception as e:
-                            self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
 
                     processed_count += len(similar_paths)
                     self._set_stats(processed=processed_count, groups=group_count)
@@ -927,16 +1056,253 @@ class AutoSortDialog(tk.Toplevel):
                     isolated_count += 1
                     self._set_stats(processed=processed_count, isolated=isolated_count)
 
+            if self.stop_flag:
+                self._finish(stopped=True)
+            elif not groups:
+                self._set_status("グループが見つかりませんでした")
+                self._log("類似画像のグループは見つかりませんでした")
+                self._finish(stopped=False, group_count=0, isolated_count=isolated_count)
+            else:
+                self.all_groups = groups
+                self._set_status(f"分析完了: {len(groups)}グループ / 孤立{isolated_count}枚")
+                self._log(f"--- 分析完了: {len(groups)}グループ / 孤立{isolated_count}枚 ---")
+                self.after(0, self._show_confirmation)
+
+        except Exception as e:
+            logger.error(f"オート仕分けエラー: {e}", exc_info=True)
+            self._set_status(f"エラー: {e}")
+            self._log(f"エラーが発生しました: {e}")
+            self.after(0, lambda: self.btn_close.config(state=tk.NORMAL))
+
+    def _load_thumbnail(self, path, size=(64, 64)):
+        """サムネイル画像を読み込んでImageTk.PhotoImageを返す"""
+        try:
+            with Image.open(path) as img:
+                img.thumbnail(size)
+                tk_img = ImageTk.PhotoImage(img)
+                self._thumb_refs.append(tk_img)
+                return tk_img
+        except Exception:
+            return None
+
+    def _show_confirmation(self):
+        """クラスタリング結果の確認UIを表示（サムネイル付き、クリックで詳細）"""
+        self._thumb_refs = []
+
+        # ログエリアを非表示にして確認フレームに差し替え
+        self._log_frame.pack_forget()
+
+        # 確認用フレーム
+        self._confirm_frame = tk.Frame(self)
+        self._confirm_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
+
+        # 一括操作ボタン
+        ctrl_frame = tk.Frame(self._confirm_frame)
+        ctrl_frame.pack(fill=tk.X, pady=(0, 4))
+        tk.Button(ctrl_frame, text="全選択", font=("MS Gothic", 8),
+                  command=lambda: self._set_all_checks(True)).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(ctrl_frame, text="全解除", font=("MS Gothic", 8),
+                  command=lambda: self._set_all_checks(False)).pack(side=tk.LEFT)
+        tk.Label(ctrl_frame, text="(クリックで詳細表示)",
+                 font=("MS Gothic", 8), fg="#888888").pack(side=tk.RIGHT)
+
+        # スクロール可能なグループ一覧
+        list_frame = tk.Frame(self._confirm_frame, bd=1, relief=tk.SUNKEN)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self._canvas = tk.Canvas(list_frame, bg="#f8f8f8", highlightthickness=0)
+        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self._canvas.yview)
+        self._inner_frame = tk.Frame(self._canvas, bg="#f8f8f8")
+
+        self._inner_frame.bind(
+            "<Configure>",
+            lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        )
+        self._canvas.create_window((0, 0), window=self._inner_frame, anchor="nw")
+        self._canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # マウスホイールスクロール
+        def _on_mousewheel(event):
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # グループ一覧表示
+        self._group_vars = []
+        for group in self.all_groups:
+            var = tk.BooleanVar(value=True)
+            self._group_vars.append(var)
+            row = tk.Frame(self._inner_frame, bg="#f0f4ff", bd=1, relief=tk.GROOVE,
+                           cursor="hand2")
+            row.pack(fill=tk.X, padx=6, pady=2)
+
+            # サムネイル
+            thumb = self._load_thumbnail(group["members"][0])
+            if thumb:
+                lbl_img = tk.Label(row, image=thumb, bg="#f0f4ff", cursor="hand2")
+                lbl_img.pack(side=tk.LEFT, padx=(4, 6), pady=2)
+                lbl_img.bind("<Button-1>", lambda e, g=group: self._open_group_detail(g))
+
+            cb = tk.Checkbutton(
+                row, variable=var, bg="#f0f4ff", activebackground="#f0f4ff",
+                text=f"グループ {group['group_num']}: {len(group['members'])}枚",
+                font=("MS Gothic", 9), anchor="w",
+            )
+            cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            # 行クリックで詳細を開く（チェックボックス以外の部分）
+            btn_detail = tk.Button(row, text="詳細", font=("MS Gothic", 8),
+                                   command=lambda g=group: self._open_group_detail(g),
+                                   bg="#dde4f0", relief=tk.FLAT, cursor="hand2")
+            btn_detail.pack(side=tk.RIGHT, padx=(0, 4), pady=2)
+
+        # 閾値スライダーを有効化
+        self.scale.config(state=tk.NORMAL)
+
+        # ボタンを差し替え: 「再分析」「実行」「閉じる」
+        for w in self._btn_frame.winfo_children():
+            w.destroy()
+
+        self.btn_reanalyze = tk.Button(self._btn_frame, text="再分析", width=10,
+                                       command=self._start_reanalyze_from_main, font=("MS Gothic", 10))
+        self.btn_reanalyze.pack(side=tk.LEFT, padx=5)
+        self.btn_action = tk.Button(self._btn_frame, text="実行", width=10,
+                                    command=self._execute_selected, font=("MS Gothic", 10))
+        self.btn_action.pack(side=tk.LEFT, padx=5)
+        self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
+                                   command=self._on_close, font=("MS Gothic", 10))
+        self.btn_close.pack(side=tk.LEFT, padx=5)
+
+    def _open_group_detail(self, group):
+        """グループ詳細ウィンドウを開く"""
+        GroupDetailWindow(self, group)
+
+    def _set_all_checks(self, value):
+        for var in self._group_vars:
+            var.set(value)
+
+    def _reanalyze_global(self, new_threshold):
+        """グローバル再仕分け（GroupDetailWindowから呼ばれる）"""
+        self.var_threshold.set(new_threshold)
+        self.lbl_thresh_val.config(text=f"{new_threshold*100:.0f}%")
+        self._start_reanalyze_from_main()
+
+    def _start_reanalyze_from_main(self):
+        """メインウィンドウから再分析を開始（全画像対象でグローバル再クラスタリング）"""
+        # 確認フレームを破棄
+        try:
+            self.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
+        if hasattr(self, '_confirm_frame') and self._confirm_frame.winfo_exists():
+            self._confirm_frame.destroy()
+        self._thumb_refs = []
+
+        # ログ表示に戻す
+        self._log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
+
+        # ボタンを再構築
+        for w in self._btn_frame.winfo_children():
+            w.destroy()
+        self.btn_action = tk.Button(self._btn_frame, text="停止", width=12,
+                                    command=self._stop, font=("MS Gothic", 10))
+        self.btn_action.pack(side=tk.LEFT, padx=5)
+        self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
+                                   command=self._on_close, font=("MS Gothic", 10),
+                                   state=tk.DISABLED)
+        self.btn_close.pack(side=tk.LEFT, padx=5)
+
+        self._log(f"\n--- 再分析開始 (しきい値: {self.var_threshold.get()*100:.0f}%) ---")
+
+        # 再分析実行
+        self.stop_flag = False
+        self.scale.config(state=tk.DISABLED)
+        self._thread = threading.Thread(target=self._run_sort, daemon=True)
+        self._thread.start()
+
+    def _execute_selected(self):
+        """チェックONのグループのファイルを移動"""
+        selected = [
+            group for group, var in zip(self.all_groups, self._group_vars)
+            if var.get()
+        ]
+
+        if not selected:
+            self._set_status("グループが選択されていません")
+            return
+
+        # グループ番号を連番に振り直し
+        for i, g in enumerate(selected, 1):
+            g["group_num"] = i
+
+        # 確認フレームを削除してログ表示に戻す
+        try:
+            self.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
+        self._confirm_frame.destroy()
+        self._thumb_refs = []
+        self._log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
+
+        # ボタンを再構築
+        for w in self._btn_frame.winfo_children():
+            w.destroy()
+        self.btn_action = tk.Button(self._btn_frame, text="停止", width=12,
+                                    command=self._stop, font=("MS Gothic", 10))
+        self.btn_action.pack(side=tk.LEFT, padx=5)
+        self.btn_close = tk.Button(self._btn_frame, text="閉じる", width=10,
+                                   command=self._on_close, font=("MS Gothic", 10),
+                                   state=tk.DISABLED)
+        self.btn_close.pack(side=tk.LEFT, padx=5)
+
+        self._selected_groups = selected
+        self.stop_flag = False
+        self._thread = threading.Thread(target=self._run_move, daemon=True)
+        self._thread.start()
+
+    def _run_move(self):
+        """選択グループのファイル移動を実行（ワーカースレッド）"""
+        try:
+            moved_groups = 0
+            total_selected = len(self._selected_groups)
+
+            for idx, group in enumerate(self._selected_groups):
+                if self.stop_flag:
+                    break
+                group_num = group["group_num"]
+                members = group["members"]
+                group_folder = self._create_group_folder(group_num)
+
+                self._set_status(f"仕分け中... ({idx+1}/{total_selected})")
+                self._log(f"グループ {group_num}: {len(members)}枚 → グループ_{group_num:03d}")
+
+                for fp in members:
+                    if self.stop_flag:
+                        break
+                    try:
+                        self.move_callback(fp, group_folder, refresh=False)
+                    except TypeError:
+                        self.move_callback(fp, group_folder)
+                    except Exception as e:
+                        self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
+
+                moved_groups += 1
+
             if self.refresh_callback:
                 self.after(0, lambda: self.refresh_callback(self.folder))
 
             if self.stop_flag:
+                self._log(f"--- 停止: {moved_groups}/{total_selected}グループ移動済み ---")
                 self._finish(stopped=True)
             else:
-                self._finish(stopped=False, group_count=group_count, isolated_count=isolated_count)
+                self._log(f"--- 完了: {moved_groups}グループを仕分けました ---")
+                self._finish(stopped=False, group_count=moved_groups,
+                             isolated_count=0)
 
         except Exception as e:
-            logger.error(f"オート仕分けエラー: {e}", exc_info=True)
+            logger.error(f"仕分け実行エラー: {e}", exc_info=True)
             self._set_status(f"エラー: {e}")
             self._log(f"エラーが発生しました: {e}")
             self.after(0, lambda: self.btn_close.config(state=tk.NORMAL))
