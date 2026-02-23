@@ -1370,6 +1370,7 @@ class AutoSortDialog(tk.Toplevel):
                 self._log("類似画像のグループは見つかりませんでした")
                 self._finish(stopped=False, group_count=0, isolated_count=isolated_count)
             else:
+                groups.sort(key=lambda g: len(g["members"]), reverse=True)
                 self.all_groups = groups
                 self._set_status(f"分析完了: {len(groups)}グループ / 孤立{isolated_count}枚")
                 self._log(f"--- 分析完了: {len(groups)}グループ / 孤立{isolated_count}枚 ---")
