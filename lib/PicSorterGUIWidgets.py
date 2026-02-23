@@ -678,8 +678,8 @@ class GroupDetailWindow(tk.Toplevel):
         self._thumb_refs = []
         self._member_vars = []  # 各画像のチェック状態
         self._thumb_size = 100  # サムネイルサイズ（ホイールで変更可能）
-        self._cols = 4
         self._exec_thread = None
+        self._last_cols = 0  # リサイズ検知用
         self._original_members = list(group["members"])  # 元のメンバー保持
         self._prev_members = list(group["members"])  # グリッド描画時のメンバー追跡
         self._seed_path = group["members"][0] if group["members"] else None
@@ -783,6 +783,16 @@ class GroupDetailWindow(tk.Toplevel):
         # サムネイルグリッドを描画
         self._render_grid()
 
+        # ウィンドウリサイズで列数を自動調整
+        self._resize_timer = None
+
+        def _on_window_resize(event):
+            if event.widget == self:
+                if self._resize_timer:
+                    self.after_cancel(self._resize_timer)
+                self._resize_timer = self.after(200, self._check_reflow)
+        self.bind("<Configure>", _on_window_resize)
+
         # 実行設定フレーム
         exec_frame = tk.LabelFrame(self, text="この群を実行", font=("MS Gothic", 9),
                                    padx=6, pady=4)
@@ -824,6 +834,24 @@ class GroupDetailWindow(tk.Toplevel):
         tk.Button(btn_frame, text="適用しないで閉じる", font=("MS Gothic", 8),
                   command=self._close_without_apply).pack(side=tk.LEFT, padx=4)
 
+    def _calc_cols(self):
+        """ウィンドウ幅とサムネイルサイズから列数を計算"""
+        try:
+            canvas_w = self._canvas.winfo_width()
+            if canvas_w < 10:
+                canvas_w = self.winfo_width() - 40
+            cell_w = self._thumb_size + 20  # サムネイル + パディング
+            cols = max(1, canvas_w // cell_w)
+        except Exception:
+            cols = 4
+        return cols
+
+    def _check_reflow(self):
+        """ウィンドウリサイズ後に列数が変わったら再描画"""
+        new_cols = self._calc_cols()
+        if new_cols != self._last_cols:
+            self._render_grid()
+
     def _render_grid(self):
         """サムネイルグリッドを描画（サイズ変更・閾値変更時にも呼ばれる）"""
         # 既存のチェック状態をパス単位で保存
@@ -840,7 +868,8 @@ class GroupDetailWindow(tk.Toplevel):
         self._thumb_refs = []
         self._member_vars = []
 
-        cols = self._cols
+        cols = self._calc_cols()
+        self._last_cols = cols
         size = self._thumb_size
         max_name_len = max(14, size // 7)
 
@@ -1163,7 +1192,8 @@ class AutoSortDialog(tk.Toplevel):
         self.title("オート仕分け")
         self.geometry("520x560")
         self.attributes("-topmost", True)
-        self.resizable(False, False)
+        self.resizable(True, True)
+        self.minsize(400, 400)
 
         self.folder = folder
         self.move_callback = move_callback
