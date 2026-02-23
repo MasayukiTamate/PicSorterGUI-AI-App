@@ -1,7 +1,7 @@
 
 import os
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from PIL import Image, ImageTk
 import random
 import threading
@@ -9,7 +9,8 @@ import time
 
 from lib.PicSorterGUILogger import get_logger
 from lib.PicSorterGUIState import get_app_state
-from lib.PicSorterGUIAI import VectorEngine, check_model_cached, download_model
+from lib.PicSorterGUIAI import (VectorEngine, check_model_cached, download_model,
+                                get_model_cache_dir, apply_model_cache_dir, move_model_files)
 from lib.PicSorterGUILib import GetGazoFiles
 from lib.config_defaults import AI_MODELS, DEFAULT_AI_MODEL, SUPPORTED_IMAGE_FORMATS
 
@@ -29,13 +30,17 @@ class ModelSelectDialog(tk.Toplevel):
     def __init__(self, parent, current_model_key=None, on_select=None):
         super().__init__(parent)
         self.title("AIモデル選択")
-        self.geometry("480x380")
+        self.geometry("540x640")
         self.attributes("-topmost", True)
         self.resizable(False, False)
 
         self.on_select = on_select
         self.result_model = current_model_key or DEFAULT_AI_MODEL
         self.cancelled = True
+
+        # カスタムモデル設定の読み込み
+        self._custom_path = app_state.custom_model_path
+        self._custom_arch = app_state.custom_model_arch
 
         tk.Label(self, text="使用するAIモデルを選択してください",
                  font=("MS Gothic", 11, "bold")).pack(pady=(15, 10))
@@ -46,12 +51,15 @@ class ModelSelectDialog(tk.Toplevel):
         self.frame_models.pack(fill=tk.BOTH, padx=20, pady=5, expand=True)
 
         self.status_labels = {}
+        self._custom_frame_inner = None  # カスタムモデル用追加UI
+
         for key, info in AI_MODELS.items():
             frame = tk.Frame(self.frame_models, bd=1, relief=tk.GROOVE, padx=10, pady=8)
             frame.pack(fill=tk.X, pady=3)
 
             rb = tk.Radiobutton(frame, text=info["name"], variable=self.var_model,
-                                value=key, font=("MS Gothic", 10, "bold"), anchor="w")
+                                value=key, font=("MS Gothic", 10, "bold"), anchor="w",
+                                command=self._on_model_radio_changed)
             rb.pack(fill=tk.X)
 
             desc_frame = tk.Frame(frame)
@@ -60,13 +68,55 @@ class ModelSelectDialog(tk.Toplevel):
             tk.Label(desc_frame, text=info["description"],
                      font=("MS Gothic", 9), fg="#555555", anchor="w").pack(side=tk.LEFT)
 
-            cached = check_model_cached(key)
-            status_text = "ダウンロード済み" if cached else "未ダウンロード"
-            status_color = "#008800" if cached else "#cc0000"
-            lbl_status = tk.Label(desc_frame, text=status_text,
-                                  font=("MS Gothic", 9, "bold"), fg=status_color)
-            lbl_status.pack(side=tk.RIGHT)
+            if key == "custom":
+                # カスタムモデル用の追加UI
+                self._custom_frame_inner = tk.Frame(frame, padx=5)
+                self._custom_frame_inner.pack(fill=tk.X, pady=(4, 0))
+                self._build_custom_ui(self._custom_frame_inner)
+                lbl_status = tk.Label(desc_frame, text="",
+                                      font=("MS Gothic", 9, "bold"))
+                lbl_status.pack(side=tk.RIGHT)
+            else:
+                cached = check_model_cached(key)
+                status_text = "ダウンロード済み" if cached else "未ダウンロード"
+                status_color = "#008800" if cached else "#cc0000"
+                lbl_status = tk.Label(desc_frame, text=status_text,
+                                      font=("MS Gothic", 9, "bold"), fg=status_color)
+                lbl_status.pack(side=tk.RIGHT)
+
             self.status_labels[key] = lbl_status
+
+        self._update_custom_status()
+        self._on_model_radio_changed()
+
+        # --- モデル格納場所セクション ---
+        self._old_checkpoints_dir = get_model_cache_dir()
+        self._pending_torch_home = None  # ユーザーが選択した新しい TORCH_HOME
+
+        frame_storage = tk.LabelFrame(self, text="モデルの格納場所",
+                                      font=("MS Gothic", 9), padx=8, pady=6)
+        frame_storage.pack(fill=tk.X, padx=20, pady=(2, 4))
+
+        # 現在のパス表示行
+        path_row = tk.Frame(frame_storage)
+        path_row.pack(fill=tk.X)
+        tk.Label(path_row, text="格納先:", font=("MS Gothic", 9), width=6, anchor="w").pack(side=tk.LEFT)
+        self._var_cache_display = tk.StringVar(value=self._old_checkpoints_dir)
+        tk.Label(path_row, textvariable=self._var_cache_display,
+                 font=("MS Gothic", 8), fg="#333333", anchor="w",
+                 wraplength=360, justify="left").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # ボタン行
+        btn_row = tk.Frame(frame_storage)
+        btn_row.pack(fill=tk.X, pady=(4, 0))
+        tk.Button(btn_row, text="フォルダを変更...", font=("MS Gothic", 9),
+                  command=self._change_cache_dir).pack(side=tk.LEFT)
+        self.btn_move_models = tk.Button(btn_row, text="既存モデルを移動",
+                                         font=("MS Gothic", 9), state=tk.DISABLED,
+                                         command=self._on_move_models)
+        self.btn_move_models.pack(side=tk.LEFT, padx=(4, 0))
+        self.lbl_move_status = tk.Label(btn_row, text="", font=("MS Gothic", 9))
+        self.lbl_move_status.pack(side=tk.LEFT, padx=(6, 0))
 
         # ステータスラベル
         self.lbl_progress = tk.Label(self, text="", font=("MS Gothic", 9), fg="#0055aa")
@@ -93,8 +143,79 @@ class ModelSelectDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
+    def _build_custom_ui(self, parent):
+        """カスタムモデル選択UIを構築"""
+        # ファイルパス選択
+        path_frame = tk.Frame(parent)
+        path_frame.pack(fill=tk.X, pady=2)
+
+        tk.Label(path_frame, text=".pthファイル:", font=("MS Gothic", 9), width=12, anchor="w").pack(side=tk.LEFT)
+        self._var_custom_path = tk.StringVar(value=self._custom_path)
+        entry = tk.Entry(path_frame, textvariable=self._var_custom_path,
+                         font=("MS Gothic", 8), state="readonly", width=28)
+        entry.pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(path_frame, text="参照...", font=("MS Gothic", 9),
+                  command=self._browse_custom_file).pack(side=tk.LEFT)
+
+        # ベースアーキテクチャ選択
+        arch_frame = tk.Frame(parent)
+        arch_frame.pack(fill=tk.X, pady=2)
+
+        tk.Label(arch_frame, text="アーキテクチャ:", font=("MS Gothic", 9), width=12, anchor="w").pack(side=tk.LEFT)
+        arch_keys = [k for k in AI_MODELS if k != "custom"]
+        arch_labels = [AI_MODELS[k]["name"] for k in arch_keys]
+        self._arch_keys = arch_keys
+
+        self._var_custom_arch = tk.StringVar()
+        arch_combo = ttk.Combobox(arch_frame, textvariable=self._var_custom_arch,
+                                  values=arch_labels, state="readonly", width=22,
+                                  font=("MS Gothic", 9))
+        arch_combo.pack(side=tk.LEFT)
+        # 現在のアーキテクチャを選択
+        if self._custom_arch in arch_keys:
+            arch_combo.current(arch_keys.index(self._custom_arch))
+        else:
+            arch_combo.current(0)
+        arch_combo.bind("<<ComboboxSelected>>", lambda e: self._update_custom_status())
+
+        self._arch_combo = arch_combo
+
+    def _browse_custom_file(self):
+        """カスタム.pthファイルを選択"""
+        prev_topmost = self.attributes("-topmost")
+        self.attributes("-topmost", False)
+        path = filedialog.askopenfilename(
+            title="PyTorch重みファイル (.pth) を選択",
+            filetypes=[("PyTorchモデルファイル", "*.pth *.pt"), ("全ファイル", "*.*")]
+        )
+        self.attributes("-topmost", prev_topmost)
+        if path:
+            self._var_custom_path.set(path)
+            self._custom_path = path
+            self._update_custom_status()
+
+    def _update_custom_status(self):
+        """カスタムモデルのステータスラベルを更新"""
+        if "custom" not in self.status_labels:
+            return
+        path = self._var_custom_path.get() if hasattr(self, "_var_custom_path") else self._custom_path
+        if path and os.path.isfile(path):
+            self.status_labels["custom"].config(text="ファイル確認済み", fg="#008800")
+        else:
+            self.status_labels["custom"].config(text="未選択", fg="#cc0000")
+
+    def _on_model_radio_changed(self):
+        """モデル選択変更時にダウンロードボタンの表示を切り替え"""
+        key = self.var_model.get()
+        if key == "custom":
+            self.btn_download.config(state=tk.DISABLED)
+        else:
+            self.btn_download.config(state=tk.NORMAL)
+
     def _on_download(self):
         key = self.var_model.get()
+        if key == "custom":
+            return
         if check_model_cached(key):
             self.lbl_progress.config(text=f"{AI_MODELS[key]['name']} は既にダウンロード済みです")
             return
@@ -119,11 +240,108 @@ class ModelSelectDialog(tk.Toplevel):
         else:
             self.lbl_progress.config(text="ダウンロードに失敗しました")
 
+    def _change_cache_dir(self):
+        """格納フォルダ（TORCH_HOME）を変更する"""
+        prev_topmost = self.attributes("-topmost")
+        self.attributes("-topmost", False)
+        new_torch_home = filedialog.askdirectory(
+            title="モデルの格納フォルダ（TORCH_HOME）を選択",
+            initialdir=self._pending_torch_home or os.path.expanduser("~")
+        )
+        self.attributes("-topmost", prev_topmost)
+        if not new_torch_home:
+            return
+
+        self._pending_torch_home = new_torch_home
+        new_checkpoints = os.path.join(new_torch_home, 'hub', 'checkpoints')
+        self._var_cache_display.set(new_checkpoints)
+
+        # 旧ディレクトリに移動できるファイルがあるか確認
+        has_files = any(
+            os.path.isfile(os.path.join(self._old_checkpoints_dir, info["weight_file"]))
+            for info in AI_MODELS.values()
+            if info.get("weight_file") and
+               os.path.normpath(self._old_checkpoints_dir) != os.path.normpath(new_checkpoints)
+        )
+        if has_files:
+            self.btn_move_models.config(state=tk.NORMAL)
+            self.lbl_move_status.config(text="← 旧フォルダからモデルを移動できます", fg="#888888")
+        else:
+            self.btn_move_models.config(state=tk.DISABLED)
+            self.lbl_move_status.config(text="(移動するファイルなし)", fg="#888888")
+
+        # 新しいパスでのキャッシュ状態を反映
+        self._refresh_model_statuses(new_checkpoints)
+
+    def _refresh_model_statuses(self, checkpoints_dir):
+        """指定ディレクトリを基準にモデルのステータスラベルを更新する"""
+        for key, info in AI_MODELS.items():
+            if key == "custom" or key not in self.status_labels:
+                continue
+            weight_file = info.get("weight_file")
+            if not weight_file:
+                continue
+            cached = os.path.isfile(os.path.join(checkpoints_dir, weight_file))
+            self.status_labels[key].config(
+                text="ダウンロード済み" if cached else "未ダウンロード",
+                fg="#008800" if cached else "#cc0000"
+            )
+
+    def _on_move_models(self):
+        """モデルファイルを旧ディレクトリから新ディレクトリに移動する（スレッド実行）"""
+        if not self._pending_torch_home:
+            return
+        new_checkpoints = os.path.join(self._pending_torch_home, 'hub', 'checkpoints')
+        self.btn_move_models.config(state=tk.DISABLED)
+        self.btn_ok.config(state=tk.DISABLED)
+        self.btn_download.config(state=tk.DISABLED)
+        self.lbl_move_status.config(text="移動中...", fg="#0055aa")
+
+        def do_move():
+            moved, failed = move_model_files(
+                self._old_checkpoints_dir, new_checkpoints,
+                progress_callback=lambda msg: self.after(
+                    0, lambda m=msg: self.lbl_move_status.config(text=m, fg="#0055aa"))
+            )
+            self.after(0, lambda: self._on_move_complete(moved, failed, new_checkpoints))
+
+        threading.Thread(target=do_move, daemon=True).start()
+
+    def _on_move_complete(self, moved, failed, new_checkpoints):
+        self.btn_ok.config(state=tk.NORMAL)
+        self.btn_download.config(state=tk.NORMAL if self.var_model.get() != "custom" else tk.DISABLED)
+        if failed:
+            names = ", ".join(f for f, _ in failed)
+            self.lbl_move_status.config(
+                text=f"{len(moved)}件移動済み / {len(failed)}件失敗: {names}", fg="#cc0000")
+        else:
+            self.lbl_move_status.config(text=f"{len(moved)}件を移動しました", fg="#008800")
+        # 移動元を新ディレクトリとして更新（再移動を防ぐ）
+        self._old_checkpoints_dir = new_checkpoints
+        self._refresh_model_statuses(new_checkpoints)
+
     def _on_ok(self):
         key = self.var_model.get()
-        if not check_model_cached(key):
-            messagebox.showwarning("警告", f"{AI_MODELS[key]['name']} がダウンロードされていません。\n先にダウンロードしてください。", parent=self)
-            return
+
+        if key == "custom":
+            path = self._var_custom_path.get() if hasattr(self, "_var_custom_path") else ""
+            if not path or not os.path.isfile(path):
+                messagebox.showwarning("警告", ".pthファイルを選択してください。", parent=self)
+                return
+            arch_idx = self._arch_combo.current()
+            arch_key = self._arch_keys[arch_idx] if arch_idx >= 0 else "mobilenet_v3_small"
+            app_state.custom_model_path = path
+            app_state.custom_model_arch = arch_key
+        else:
+            if not check_model_cached(key):
+                messagebox.showwarning("警告", f"{AI_MODELS[key]['name']} がダウンロードされていません。\n先にダウンロードしてください。", parent=self)
+                return
+
+        # 格納先の変更を適用
+        if self._pending_torch_home is not None:
+            app_state.model_cache_dir = self._pending_torch_home
+            apply_model_cache_dir(self._pending_torch_home)
+
         self.result_model = key
         self.cancelled = False
         self.grab_release()

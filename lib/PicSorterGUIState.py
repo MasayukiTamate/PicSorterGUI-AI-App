@@ -49,6 +49,13 @@ class AppState:
         # 参照フォルダリスト [{"path": str, "include_subfolders": bool}, ...]
         self.reference_folders = []
 
+        # AIモデル設定
+        from lib.config_defaults import DEFAULT_AI_MODEL
+        self.ai_model = DEFAULT_AI_MODEL
+        self.custom_model_path = ""
+        self.custom_model_arch = "mobilenet_v3_small"
+        self.model_cache_dir = ""  # 空 = デフォルト (~/.cache/torch)
+
         # ウィンドウジオメトリ
         self.window_geometries = {
             "main": None,
@@ -264,6 +271,10 @@ class AppState:
                 "smart_move_show_thumbnails": self.smart_move_show_thumbnails,
                 "show_splash_tips": self.show_splash_tips,
                 "reference_folders": self.reference_folders,
+                "ai_model": self.ai_model,
+                "custom_model_path": self.custom_model_path,
+                "custom_model_arch": self.custom_model_arch,
+                "model_cache_dir": self.model_cache_dir,
             }
         }
 
@@ -307,6 +318,12 @@ class AppState:
                     {"path": f["path"], "include_subfolders": f.get("include_subfolders", False)}
                     for f in ref_folders if isinstance(f, dict) and "path" in f
                 ]
+
+                from lib.config_defaults import DEFAULT_AI_MODEL
+                self.ai_model = settings.get("ai_model", DEFAULT_AI_MODEL)
+                self.custom_model_path = settings.get("custom_model_path", "")
+                self.custom_model_arch = settings.get("custom_model_arch", "mobilenet_v3_small")
+                self.model_cache_dir = settings.get("model_cache_dir", "")
 
             logger.info("状態を復元しました")
         except Exception as e:

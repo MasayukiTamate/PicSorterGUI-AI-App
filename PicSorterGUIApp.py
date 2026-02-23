@@ -32,7 +32,7 @@ from lib.config_defaults import (
     MOVE_DESTINATION_OPTIONS, AI_MODELS, DEFAULT_AI_MODEL,
 )
 from lib.PicSorterGUIWidgets import SplashWindow, ModelSelectDialog
-from lib.PicSorterGUIAI import VectorEngine
+from lib.PicSorterGUIAI import VectorEngine, apply_model_cache_dir
 
 # --- アプリケーション状態の初期化 ---
 app_state = get_app_state()
@@ -63,7 +63,7 @@ koRoot.after(1500, close_splash)
 
 def check_model_on_startup():
     """起動時にAIモデルがダウンロード済みか確認し、なければ選択ダイアログを表示"""
-    current_model = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+    current_model = app_state.ai_model
     # VectorEngine にモデルキーを設定（まだインスタンスは作らない）
     VectorEngine._current_model_key = current_model
     if not check_model_cached(current_model):
@@ -72,10 +72,10 @@ def check_model_on_startup():
 
 def open_model_select_dialog():
     """モデル選択ダイアログを開く"""
-    current_model = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+    current_model = app_state.ai_model
 
     def on_model_selected(new_key):
-        old_key = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
+        old_key = app_state.ai_model
         if new_key != old_key:
             if messagebox.askyesno("確認",
                     "モデルを変更すると既存のベクトルデータと分析キャッシュがリセットされます。\n\nよろしいですか？"):
@@ -87,8 +87,9 @@ def open_model_select_dialog():
                 return
 
         # 設定を保存
+        app_state.ai_model = new_key
+        VectorEngine._current_model_key = new_key
         cfg = app_state.to_dict()
-        cfg["settings"]["ai_model"] = new_key
         save_config(cfg["last_folder"], cfg.get("geometries", {}), cfg["settings"])
         app_state.from_dict(cfg)
 
@@ -105,6 +106,7 @@ try:
     CONFIG_DATA = load_config()
     logger.info(f"設定ファイル読み込み成功: {CONFIG_DATA.get('last_folder')}")
     app_state.from_dict(CONFIG_DATA)
+    apply_model_cache_dir()  # 保存済みの格納先を TORCH_HOME に適用
 except Exception as e:
     logger.error(f"設定ファイル読み込み失敗: {e}")
     messagebox.showerror("エラー", f"設定ファイルの読み込みに失敗しました:\n{e}")
@@ -435,8 +437,12 @@ lbl_model_info.pack(fill=tk.X, padx=8, pady=(4, 0))
 
 def update_model_info():
     try:
-        current_key = app_state.to_dict().get("settings", {}).get("ai_model", DEFAULT_AI_MODEL)
-        model_name = AI_MODELS.get(current_key, {}).get("name", current_key)
+        current_key = app_state.ai_model
+        if current_key == "custom":
+            basename = os.path.basename(app_state.custom_model_path) if app_state.custom_model_path else "未設定"
+            model_name = f"カスタム ({basename})"
+        else:
+            model_name = AI_MODELS.get(current_key, {}).get("name", current_key)
         lbl_model_info.config(text=f"使用モデル: {model_name}")
     except Exception:
         lbl_model_info.config(text="使用モデル: 不明")

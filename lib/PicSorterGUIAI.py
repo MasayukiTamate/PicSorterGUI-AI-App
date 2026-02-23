@@ -23,12 +23,84 @@ logger = LoggerManager.get_logger(__name__)
 
 def _get_torch_cache_dir():
     """torchvision の重みキャッシュディレクトリを取得"""
+    try:
+        from lib.PicSorterGUIState import get_app_state
+        custom = get_app_state().model_cache_dir
+        if custom:
+            return os.path.join(custom, 'hub', 'checkpoints')
+    except Exception:
+        pass
     torch_home = os.environ.get('TORCH_HOME', os.path.join(os.path.expanduser('~'), '.cache', 'torch'))
     return os.path.join(torch_home, 'hub', 'checkpoints')
 
 
+def get_model_cache_dir():
+    """現在有効なモデルキャッシュディレクトリ（checkpoints 階層）を返す"""
+    return _get_torch_cache_dir()
+
+
+def apply_model_cache_dir(path=None):
+    """保存済みのモデルキャッシュ先を TORCH_HOME 環境変数に適用する。
+    path が None の場合は app_state から読む。空文字の場合は環境変数を削除してデフォルトに戻す。
+    """
+    if path is None:
+        try:
+            from lib.PicSorterGUIState import get_app_state
+            path = get_app_state().model_cache_dir
+        except Exception:
+            path = ""
+    if path:
+        os.environ['TORCH_HOME'] = path
+        logger.info(f"TORCH_HOME を設定: {path}")
+    else:
+        os.environ.pop('TORCH_HOME', None)
+        logger.info("TORCH_HOME をデフォルトにリセット")
+
+
+def move_model_files(old_dir, new_dir, progress_callback=None):
+    """モデルの .pth ファイルを old_dir から new_dir に移動する。
+    戻り値: (moved_list, failed_list)
+    """
+    import shutil
+    moved = []
+    failed = []
+    try:
+        os.makedirs(new_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"移動先フォルダの作成に失敗: {new_dir} - {e}")
+        return moved, [(None, str(e))]
+
+    for key, info in AI_MODELS.items():
+        weight_file = info.get("weight_file")
+        if not weight_file:
+            continue
+        old_path = os.path.join(old_dir, weight_file)
+        new_path = os.path.join(new_dir, weight_file)
+        if not os.path.isfile(old_path):
+            continue
+        if os.path.isfile(new_path):
+            logger.info(f"移動先に既に存在するためスキップ: {weight_file}")
+            moved.append(weight_file)
+            continue
+        try:
+            if progress_callback:
+                progress_callback(f"移動中: {weight_file}")
+            shutil.move(old_path, new_path)
+            moved.append(weight_file)
+            logger.info(f"モデルファイル移動完了: {weight_file}")
+        except Exception as e:
+            logger.error(f"モデルファイル移動失敗: {weight_file} - {e}")
+            failed.append((weight_file, str(e)))
+
+    return moved, failed
+
+
 def check_model_cached(model_key):
     """指定モデルの重みがローカルにキャッシュされているか確認"""
+    if model_key == "custom":
+        from lib.PicSorterGUIState import get_app_state
+        path = get_app_state().custom_model_path
+        return bool(path and os.path.isfile(path))
     if model_key not in AI_MODELS:
         return False
     weight_file = AI_MODELS[model_key]["weight_file"]
@@ -38,6 +110,10 @@ def check_model_cached(model_key):
 
 def download_model(model_key, progress_callback=None):
     """指定モデルの重みをダウンロードする"""
+    if model_key == "custom":
+        if progress_callback:
+            progress_callback("カスタムモデルはファイルを直接選択してください")
+        return False
     if model_key not in AI_MODELS:
         raise AIModelError(f"Unknown model: {model_key}")
 
@@ -98,7 +174,13 @@ class VectorEngine:
         if not model_info:
             raise AIModelError(f"Unknown model: {model_key}")
 
-        logger.info(f"AIモデル({model_info['name']})の準備を開始...")
+        display_name = model_info['name']
+        if model_key == "custom":
+            from lib.PicSorterGUIState import get_app_state
+            state = get_app_state()
+            display_name = f"カスタム({os.path.basename(state.custom_model_path or '未設定')})"
+
+        logger.info(f"AIモデル({display_name})の準備を開始...")
 
         try:
             self.model, self.preprocess = self._load_model(model_key)
@@ -110,7 +192,7 @@ class VectorEngine:
             torch.set_grad_enabled(False)
 
             self.available = True
-            logger.info(f"AIモデル({model_info['name']})の準備が完了しました")
+            logger.info(f"AIモデル({display_name})の準備が完了しました")
         except Exception as e:
             logger.error(f"AIモデルの読み込みでエラー: {e}", exc_info=True)
             raise AIModelError(f"Failed to initialize AI model: {e}") from e
@@ -150,6 +232,57 @@ class VectorEngine:
             model = models.efficientnet_b0(weights=weights)
             model.classifier = torch.nn.Identity()
             return model, weights.transforms()
+
+        elif model_key == "custom":
+            from lib.PicSorterGUIState import get_app_state
+            state = get_app_state()
+            arch = state.custom_model_arch
+            path = state.custom_model_path
+
+            if not path or not os.path.isfile(path):
+                raise AIModelError(f"カスタムモデルファイルが見つかりません: {path}")
+
+            # ベースアーキテクチャに合わせてモデル構造を構築
+            if arch == "mobilenet_v3_small":
+                base_weights = models.MobileNet_V3_Small_Weights.DEFAULT
+                model = models.mobilenet_v3_small(weights=None)
+                model.classifier = torch.nn.Sequential(
+                    model.classifier[0], model.classifier[1],
+                    model.classifier[2], torch.nn.Identity()
+                )
+                preprocess = base_weights.transforms()
+            elif arch == "mobilenet_v3_large":
+                base_weights = models.MobileNet_V3_Large_Weights.DEFAULT
+                model = models.mobilenet_v3_large(weights=None)
+                model.classifier = torch.nn.Sequential(
+                    model.classifier[0], model.classifier[1],
+                    model.classifier[2], torch.nn.Identity()
+                )
+                preprocess = base_weights.transforms()
+            elif arch == "resnet50":
+                base_weights = models.ResNet50_Weights.DEFAULT
+                model = models.resnet50(weights=None)
+                model.fc = torch.nn.Identity()
+                preprocess = base_weights.transforms()
+            elif arch == "efficientnet_b0":
+                base_weights = models.EfficientNet_B0_Weights.DEFAULT
+                model = models.efficientnet_b0(weights=None)
+                model.classifier = torch.nn.Identity()
+                preprocess = base_weights.transforms()
+            else:
+                raise AIModelError(f"未対応のベースアーキテクチャ: {arch}")
+
+            # カスタム重みファイルを読み込む
+            state_dict = torch.load(path, map_location="cpu", weights_only=True)
+            # よくあるラッパー形式に対応
+            if isinstance(state_dict, dict):
+                for key in ("state_dict", "model", "model_state_dict", "net"):
+                    if key in state_dict:
+                        state_dict = state_dict[key]
+                        break
+            model.load_state_dict(state_dict, strict=False)
+            logger.info(f"カスタムモデル読み込み完了: {path} (アーキテクチャ: {arch})")
+            return model, preprocess
 
         else:
             raise AIModelError(f"Unsupported model: {model_key}")

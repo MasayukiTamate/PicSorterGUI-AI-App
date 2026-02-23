@@ -77,6 +77,12 @@ AI_MODELS = {
         "vector_dim": 1280,
         "weight_file": "efficientnet_b0_rwightman-7f5810bc.pth",
     },
+    "custom": {
+        "name": "カスタムモデル (.pth)",
+        "description": "注意！　自分で理解できる人が選択してください。\n自分でダウンロードした重みファイルを使用",
+        "vector_dim": None,
+        "weight_file": None,
+    },
 }
 
 
@@ -141,6 +147,9 @@ def get_default_config():
             "move_dest_count": MOVE_DESTINATION_MIN,
             "ai_model": DEFAULT_AI_MODEL,
             "reference_folders": [],
+            "custom_model_path": "",
+            "custom_model_arch": "mobilenet_v3_small",
+            "model_cache_dir": "",
         },
     }
 
