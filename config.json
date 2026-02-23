@@ -1,5 +1,5 @@
 {
-    "last_folder": "K:\\Syusyoku\\PicSorterGUI-AI",
+    "last_folder": "C:/Users/magor/OneDrive/Desktop/PicClass/random_samples",
     "geometries": {
         "main": "320x335+1253+63",
         "folder": "",
@@ -8,7 +8,6 @@
     "settings": {
         "topmost": 1,
         "show_folder": true,
-        "show_file": false,
         "move_dest_list": [
             "",
             "",
@@ -25,17 +24,18 @@
         ],
         "move_reg_idx": 0,
         "move_dest_count": 12,
+        "ai_model": "mobilenet_v3_small",
+        "reference_folders": [],
+        "custom_model_path": "",
+        "custom_model_arch": "mobilenet_v3_small",
+        "model_cache_dir": "",
+        "show_file": false,
         "image_min_width": 100,
         "image_min_height": 100,
         "image_max_width": 0,
         "image_max_height": 0,
         "smart_move_threshold": 0.9,
         "smart_move_show_thumbnails": true,
-        "show_splash_tips": false,
-        "reference_folders": [],
-        "ai_model": "mobilenet_v3_small",
-        "custom_model_path": "",
-        "custom_model_arch": "mobilenet_v3_small",
-        "model_cache_dir": ""
+        "show_splash_tips": false
     }
 }

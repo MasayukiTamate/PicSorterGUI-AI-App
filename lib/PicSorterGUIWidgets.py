@@ -669,7 +669,7 @@ class SimilarityMoveDialog(tk.Toplevel):
 
 
 class GroupDetailWindow(tk.Toplevel):
-    """グループ詳細ウィンドウ: グループ内の全画像をサムネイルで表示、個別除外可能"""
+    """グループ詳細ウィンドウ: グループ内の全画像をサムネイルで表示、個別除外・実行可能"""
 
     def __init__(self, parent_dialog, group):
         super().__init__(parent_dialog)
@@ -677,15 +677,51 @@ class GroupDetailWindow(tk.Toplevel):
         self.group = group
         self._thumb_refs = []
         self._member_vars = []  # 各画像のチェック状態
+        self._thumb_size = 100  # サムネイルサイズ（ホイールで変更可能）
+        self._cols = 4
+        self._original_members = list(group["members"])  # 元のメンバー保持
+        self._prev_members = list(group["members"])  # グリッド描画時のメンバー追跡
+        self._seed_path = group["members"][0] if group["members"] else None
+
+        # 親ダイアログの現在しきい値を取得
+        self._parent_threshold = 0.80
+        if hasattr(parent_dialog, 'var_threshold'):
+            self._parent_threshold = parent_dialog.var_threshold.get()
+
+        # 全画像に対する類似度を事前計算（スライダー操作のリアルタイム性のため）
+        self._all_similarities = {}  # {path: similarity}
+        self._compute_similarities()
 
         self.title(f"グループ {group['group_num']} ({len(group['members'])}枚)")
-        self.geometry("480x500")
+        self.geometry("520x600")
         self.attributes("-topmost", True)
         self.resizable(True, True)
         self.transient(parent_dialog)
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _compute_similarities(self):
+        """シード画像と全画像の類似度を事前計算"""
+        cache = getattr(self.parent_dialog, '_vec_cache', None)
+        if not cache or not self._seed_path:
+            return
+        hash_map = cache["hash_map"]
+        vec_map = cache["vec_map"]
+        engine = cache["engine"]
+
+        seed_hash = hash_map.get(self._seed_path)
+        if not seed_hash or seed_hash not in vec_map:
+            return
+        seed_vec = vec_map[seed_hash]
+
+        for path, h in hash_map.items():
+            if path == self._seed_path:
+                self._all_similarities[path] = 1.0
+                continue
+            if h in vec_map:
+                sim = engine.compare_features(seed_vec, vec_map[h])
+                self._all_similarities[path] = sim
 
     def _build_ui(self):
         # ヘッダー
@@ -696,67 +732,84 @@ class GroupDetailWindow(tk.Toplevel):
                  font=("MS Gothic", 11, "bold"), fg="#0055cc")
         self._lbl_header.pack(side=tk.LEFT)
 
-        tk.Label(header, text="チェックを外すと対象から除外",
+        tk.Label(header, text="チェックを外すと対象から除外 / Ctrl+ホイールでサイズ変更",
                  font=("MS Gothic", 8), fg="#888888").pack(side=tk.RIGHT)
 
+        # 閾値スライダー
+        thresh_frame = tk.Frame(self)
+        thresh_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
+        tk.Label(thresh_frame, text="閾値:", font=("MS Gothic", 9)).pack(side=tk.LEFT)
+        self._var_threshold = tk.DoubleVar(value=self._parent_threshold)
+        self._lbl_thresh_val = tk.Label(thresh_frame,
+                                        text=f"{self._parent_threshold*100:.0f}%",
+                                        font=("MS Gothic", 10, "bold"), width=5,
+                                        fg="#0055cc")
+        self._lbl_thresh_val.pack(side=tk.RIGHT)
+        self._scale = tk.Scale(thresh_frame, variable=self._var_threshold,
+                               from_=0.10, to=1.0, resolution=0.01,
+                               orient=tk.HORIZONTAL, showvalue=False,
+                               command=self._on_threshold_change)
+        self._scale.pack(fill=tk.X, expand=True)
+
         # サムネイル一覧（スクロール可能）
-        list_frame = tk.Frame(self, bd=1, relief=tk.SUNKEN)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 4))
+        self._list_frame = tk.Frame(self, bd=1, relief=tk.SUNKEN)
+        self._list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 4))
 
-        canvas = tk.Canvas(list_frame, bg="#ffffff", highlightthickness=0)
-        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=canvas.yview)
-        inner = tk.Frame(canvas, bg="#ffffff")
+        self._canvas = tk.Canvas(self._list_frame, bg="#ffffff", highlightthickness=0)
+        self._scrollbar = tk.Scrollbar(self._list_frame, orient=tk.VERTICAL,
+                                       command=self._canvas.yview)
+        self._inner = tk.Frame(self._canvas, bg="#ffffff")
 
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self._inner.bind("<Configure>",
+                         lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
+        self._canvas.create_window((0, 0), window=self._inner, anchor="nw")
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
 
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # マウスホイール: スクロール / Ctrl+ホイール: サムネイルサイズ変更
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            if event.state & 0x4:  # Ctrl押下
+                self._resize_thumbnails(event.delta)
+            else:
+                self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         self.bind("<MouseWheel>", _on_mousewheel)
-        canvas.bind("<MouseWheel>", _on_mousewheel)
-        inner.bind("<MouseWheel>", _on_mousewheel)
+        self._canvas.bind("<MouseWheel>", _on_mousewheel)
+        self._inner.bind("<MouseWheel>", _on_mousewheel)
+        self._mousewheel_handler = _on_mousewheel
 
-        # 画像をグリッド表示（チェックボックス付き）
-        cols = 4
-        for i, path in enumerate(self.group["members"]):
-            r, c = divmod(i, cols)
-            cell = tk.Frame(inner, bg="#ffffff", padx=2, pady=2)
-            cell.grid(row=r, column=c, sticky="nsew")
-            cell.bind("<MouseWheel>", _on_mousewheel)
+        # サムネイルグリッドを描画
+        self._render_grid()
 
-            # チェックボックス
-            var = tk.BooleanVar(value=True)
-            self._member_vars.append(var)
-            cb = tk.Checkbutton(cell, variable=var, bg="#ffffff",
-                                activebackground="#ffffff",
-                                command=self._update_count)
-            cb.pack(anchor="e")
+        # 実行設定フレーム
+        exec_frame = tk.LabelFrame(self, text="この群を実行", font=("MS Gothic", 9),
+                                   padx=6, pady=4)
+        exec_frame.pack(fill=tk.X, padx=10, pady=(4, 4))
 
-            try:
-                with Image.open(path) as img:
-                    img.thumbnail((100, 100))
-                    tk_img = ImageTk.PhotoImage(img)
-                    self._thumb_refs.append(tk_img)
-                    lbl = tk.Label(cell, image=tk_img, bg="#ffffff")
-                    lbl.pack()
-                    lbl.bind("<MouseWheel>", _on_mousewheel)
-            except Exception:
-                tk.Label(cell, text="?", bg="#eeeeee", width=12, height=6).pack()
+        exec_row = tk.Frame(exec_frame)
+        exec_row.pack(fill=tk.X)
+        # フォルダ名入力
+        tk.Label(exec_row, text="フォルダ名:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self._var_folder_name = tk.StringVar(
+            value=f"グループ_{self.group['group_num']:03d}")
+        tk.Entry(exec_row, textvariable=self._var_folder_name,
+                 font=("MS Gothic", 8), width=16).pack(side=tk.LEFT, padx=(2, 8))
 
-            name = os.path.basename(path)
-            if len(name) > 14:
-                name = name[:11] + "..."
-            lbl_name = tk.Label(cell, text=name, font=("MS Gothic", 7),
-                                bg="#ffffff", fg="#666666")
-            lbl_name.pack()
-            lbl_name.bind("<MouseWheel>", _on_mousewheel)
+        # 単語入力
+        tk.Label(exec_row, text="単語:", font=("MS Gothic", 8)).pack(side=tk.LEFT)
+        self._var_word = tk.StringVar(value="")
+        tk.Entry(exec_row, textvariable=self._var_word,
+                 font=("MS Gothic", 8), width=12).pack(side=tk.LEFT, padx=(2, 4))
 
-        for c in range(cols):
-            inner.columnconfigure(c, weight=1)
+        exec_row2 = tk.Frame(exec_frame)
+        exec_row2.pack(fill=tk.X, pady=(4, 0))
+        tk.Button(exec_row2, text="フォルダに移動", font=("MS Gothic", 8),
+                  command=lambda: self._execute_group("move")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(exec_row2, text="リネーム", font=("MS Gothic", 8),
+                  command=lambda: self._execute_group("rename")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(exec_row2, text="移動+リネーム", font=("MS Gothic", 8),
+                  command=lambda: self._execute_group("both")).pack(side=tk.LEFT)
 
         # 下部ボタン
         btn_frame = tk.Frame(self)
@@ -768,6 +821,108 @@ class GroupDetailWindow(tk.Toplevel):
         tk.Button(btn_frame, text="適用して閉じる", font=("MS Gothic", 9, "bold"),
                   command=self._apply_and_close).pack(side=tk.LEFT, padx=(12, 4))
 
+    def _render_grid(self):
+        """サムネイルグリッドを描画（サイズ変更・閾値変更時にも呼ばれる）"""
+        # 既存のチェック状態をパス単位で保存
+        old_check_map = {}
+        if self._member_vars:
+            for path, var in zip(self._prev_members, self._member_vars):
+                old_check_map[path] = var.get()
+
+        self._prev_members = list(self.group["members"])
+
+        # 内部フレームをクリア
+        for w in self._inner.winfo_children():
+            w.destroy()
+        self._thumb_refs = []
+        self._member_vars = []
+
+        cols = self._cols
+        size = self._thumb_size
+        max_name_len = max(14, size // 7)
+
+        for i, path in enumerate(self.group["members"]):
+            r, c = divmod(i, cols)
+            cell = tk.Frame(self._inner, bg="#ffffff", padx=2, pady=2)
+            cell.grid(row=r, column=c, sticky="nsew")
+            cell.bind("<MouseWheel>", self._mousewheel_handler)
+
+            # サムネイル
+            try:
+                with Image.open(path) as img:
+                    img.thumbnail((size, size))
+                    tk_img = ImageTk.PhotoImage(img)
+                    self._thumb_refs.append(tk_img)
+                    lbl = tk.Label(cell, image=tk_img, bg="#ffffff")
+                    lbl.pack()
+                    lbl.bind("<MouseWheel>", self._mousewheel_handler)
+            except Exception:
+                tk.Label(cell, text="?", bg="#eeeeee",
+                         width=size // 8, height=size // 16).pack()
+
+            # 類似度表示
+            sim = self._all_similarities.get(path)
+            sim_text = f" ({sim*100:.0f}%)" if sim is not None and path != self._seed_path else ""
+
+            # ファイル名 + 類似度 + チェックボックス（名前の後に配置）
+            name_row = tk.Frame(cell, bg="#ffffff")
+            name_row.pack(fill=tk.X)
+            name_row.bind("<MouseWheel>", self._mousewheel_handler)
+
+            name = os.path.basename(path)
+            if len(name) > max_name_len:
+                name = name[:max_name_len - 3] + "..."
+            lbl_name = tk.Label(name_row, text=name + sim_text,
+                                font=("MS Gothic", 7),
+                                bg="#ffffff", fg="#666666")
+            lbl_name.pack(side=tk.LEFT)
+            lbl_name.bind("<MouseWheel>", self._mousewheel_handler)
+
+            # チェック状態: パスが以前あればその状態を引き継ぎ、新規はTrue
+            default_checked = old_check_map.get(path, True)
+            var = tk.BooleanVar(value=default_checked)
+            self._member_vars.append(var)
+            cb = tk.Checkbutton(name_row, variable=var, bg="#ffffff",
+                                activebackground="#ffffff",
+                                command=self._update_count)
+            cb.pack(side=tk.LEFT)
+
+        for c in range(cols):
+            self._inner.columnconfigure(c, weight=1)
+
+    def _resize_thumbnails(self, delta):
+        """Ctrl+ホイールでサムネイルサイズ変更"""
+        step = 20
+        if delta > 0:
+            self._thumb_size = min(300, self._thumb_size + step)
+        else:
+            self._thumb_size = max(40, self._thumb_size - step)
+        self._render_grid()
+
+    def _on_threshold_change(self, value):
+        """閾値スライダー変更時: メンバーをリアルタイム更新"""
+        thresh = float(value)
+        self._lbl_thresh_val.config(text=f"{thresh*100:.0f}%")
+
+        if not self._all_similarities:
+            return
+
+        # 閾値以上の画像を収集（シードは常に含む）
+        new_members = []
+        for path, sim in self._all_similarities.items():
+            if sim >= thresh and os.path.isfile(path):
+                new_members.append(path)
+
+        # シードを先頭にし、残りは類似度降順
+        if self._seed_path in new_members:
+            new_members.remove(self._seed_path)
+        new_members.sort(key=lambda p: self._all_similarities.get(p, 0), reverse=True)
+        new_members.insert(0, self._seed_path)
+
+        self.group["members"] = new_members
+        self._render_grid()
+        self._update_count()
+
     def _set_all(self, value):
         for var in self._member_vars:
             var.set(value)
@@ -778,6 +933,98 @@ class GroupDetailWindow(tk.Toplevel):
         total = len(self._member_vars)
         self._lbl_header.config(
             text=f"グループ {self.group['group_num']}: {checked}/{total}枚 選択中")
+
+    def _get_checked_members(self):
+        """チェックされたメンバーのパスリストを返す"""
+        return [path for path, var in zip(self.group["members"], self._member_vars)
+                if var.get()]
+
+    def _execute_group(self, mode):
+        """この群のみ実行（move / rename / both）"""
+        members = self._get_checked_members()
+        if not members:
+            return
+
+        parent = self.parent_dialog
+        folder = parent.folder
+
+        # リネーム設定を親ダイアログから取得
+        rename_config = None
+        if mode in ("rename", "both"):
+            word = self._var_word.get().strip()
+            if not word:
+                messagebox.showwarning("入力エラー", "単語を入力してください",
+                                          parent=self)
+                return
+            if not hasattr(parent, 'var_position'):
+                messagebox.showwarning("設定不足",
+                    "リネーム設定は確認画面のモード設定から行ってください",
+                    parent=self)
+                return
+            rename_config = {
+                "word": word,
+                "position": parent.var_position.get(),
+                "num_type": parent.var_num_type.get(),
+                "digits": parent.var_digits.get(),
+                "separator": parent.var_separator.get(),
+            }
+
+        folder_name = self._var_folder_name.get().strip()
+        if mode in ("move", "both") and not folder_name:
+            folder_name = f"グループ_{self.group['group_num']:03d}"
+
+        def _do_execute():
+            try:
+                current_members = list(members)
+
+                # フォルダ移動
+                if mode in ("move", "both"):
+                    group_folder = os.path.join(folder, folder_name)
+                    os.makedirs(group_folder, exist_ok=True)
+                    new_members = []
+                    for fp in current_members:
+                        try:
+                            parent.move_callback(fp, group_folder, refresh=False)
+                            new_members.append(os.path.join(
+                                group_folder, os.path.basename(fp)))
+                        except TypeError:
+                            parent.move_callback(fp, group_folder)
+                            new_members.append(os.path.join(
+                                group_folder, os.path.basename(fp)))
+                        except Exception:
+                            new_members.append(fp)
+                    current_members = new_members
+
+                # リネーム
+                if mode in ("rename", "both") and rename_config:
+                    word = rename_config["word"]
+                    sep = rename_config["separator"]
+                    digits = rename_config["digits"]
+                    use_alpha = rename_config["num_type"] == "alpha"
+                    is_prefix = rename_config["position"] == "prefix"
+                    for file_idx, fp in enumerate(current_members):
+                        try:
+                            dirname = os.path.dirname(fp)
+                            stem, ext = os.path.splitext(os.path.basename(fp))
+                            num = parent._format_number(file_idx, digits, use_alpha)
+                            if is_prefix:
+                                new_name = f"{word}{sep}{num}{sep}{stem}{ext}"
+                            else:
+                                new_name = f"{stem}{sep}{word}{sep}{num}{ext}"
+                            os.rename(fp, os.path.join(dirname, new_name))
+                        except Exception:
+                            pass
+
+                if parent.refresh_callback:
+                    self.after(0, lambda: parent.refresh_callback(parent.folder))
+                self.after(0, lambda: messagebox.showinfo(
+                    "完了", f"グループ {self.group['group_num']} の処理が完了しました",
+                    parent=self))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror(
+                    "エラー", str(e), parent=self))
+
+        threading.Thread(target=_do_execute, daemon=True).start()
 
     def _apply_and_close(self):
         """チェック状態を反映してグループのメンバーを更新"""
@@ -1016,7 +1263,25 @@ class AutoSortDialog(tk.Toplevel):
             hash_map = self._vec_cache["hash_map"]
             vec_map = self._vec_cache["vec_map"]
             engine = self._vec_cache["engine"]
-            full_paths = self._vec_cache["full_paths"]
+
+            # 移動・リネーム済みファイルを除外（現在フォルダに存在するもののみ）
+            current_files = set()
+            try:
+                for f in os.listdir(self.folder):
+                    fp = os.path.join(self.folder, f)
+                    if os.path.isfile(fp):
+                        current_files.add(fp)
+            except Exception:
+                pass
+
+            full_paths = [p for p in self._vec_cache["full_paths"]
+                          if p in current_files]
+
+            if not full_paths:
+                self._set_status("フォルダに対象画像がありません")
+                self._log("移動済み等により対象画像がなくなりました")
+                self._finish()
+                return
 
             threshold = self.var_threshold.get()
             self._log(f"しきい値: {threshold*100:.0f}%  対象: {len(full_paths)}枚")
@@ -1125,15 +1390,16 @@ class AutoSortDialog(tk.Toplevel):
                                    font=("MS Gothic", 9), padx=6, pady=4)
         mode_frame.pack(fill=tk.X, pady=(0, 4))
 
-        self.var_mode = tk.StringVar(value="move")
+        self.var_do_move = tk.BooleanVar(value=True)
+        self.var_do_rename = tk.BooleanVar(value=False)
 
         mode_row = tk.Frame(mode_frame)
         mode_row.pack(fill=tk.X)
-        tk.Radiobutton(mode_row, text="フォルダに移動", variable=self.var_mode,
-                       value="move", font=("MS Gothic", 9),
+        tk.Checkbutton(mode_row, text="フォルダに移動", variable=self.var_do_move,
+                       font=("MS Gothic", 9),
                        command=self._on_mode_change).pack(side=tk.LEFT, padx=(0, 12))
-        tk.Radiobutton(mode_row, text="ファイル名を変更", variable=self.var_mode,
-                       value="rename", font=("MS Gothic", 9),
+        tk.Checkbutton(mode_row, text="ファイル名を変更", variable=self.var_do_rename,
+                       font=("MS Gothic", 9),
                        command=self._on_mode_change).pack(side=tk.LEFT)
 
         # リネーム設定フレーム（リネームモード時のみ表示）
@@ -1216,7 +1482,8 @@ class AutoSortDialog(tk.Toplevel):
 
         # グループ一覧表示
         self._group_vars = []
-        self._group_entries = []
+        self._group_folder_entries = []
+        self._group_word_entries = []
         self._group_checkbuttons = []
         for group in self.all_groups:
             var = tk.BooleanVar(value=True)
@@ -1239,11 +1506,17 @@ class AutoSortDialog(tk.Toplevel):
             cb.pack(side=tk.LEFT)
             self._group_checkbuttons.append(cb)
 
-            # フォルダ名/単語入力欄
-            entry_var = tk.StringVar(value=f"グループ_{group['group_num']:03d}")
-            entry = tk.Entry(row, textvariable=entry_var, font=("MS Gothic", 9), width=18)
-            entry.pack(side=tk.LEFT, padx=(4, 4), fill=tk.X, expand=True)
-            self._group_entries.append(entry_var)
+            # フォルダ名入力欄
+            folder_var = tk.StringVar(value=f"グループ_{group['group_num']:03d}")
+            tk.Entry(row, textvariable=folder_var, font=("MS Gothic", 9),
+                     width=14).pack(side=tk.LEFT, padx=(4, 2))
+            self._group_folder_entries.append(folder_var)
+
+            # 単語入力欄
+            word_var = tk.StringVar(value="")
+            tk.Entry(row, textvariable=word_var, font=("MS Gothic", 9),
+                     width=10).pack(side=tk.LEFT, padx=(2, 4))
+            self._group_word_entries.append(word_var)
 
             # 詳細ボタン
             btn_detail = tk.Button(row, text="詳細", font=("MS Gothic", 8),
@@ -1273,19 +1546,12 @@ class AutoSortDialog(tk.Toplevel):
 
     def _on_mode_change(self):
         """モード切替時にリネーム設定の表示/非表示を切り替え"""
-        if self.var_mode.get() == "rename":
+        do_rename = self.var_do_rename.get()
+        if do_rename:
             self._rename_frame.pack(fill=tk.X)
-            # Entry のデフォルト値をリネーム用に変更
-            for i, entry_var in enumerate(self._group_entries):
-                if entry_var.get().startswith("グループ_"):
-                    entry_var.set("")
             self._update_rename_preview()
         else:
             self._rename_frame.pack_forget()
-            # Entry のデフォルト値をフォルダ名に戻す
-            for i, (group, entry_var) in enumerate(zip(self.all_groups, self._group_entries)):
-                if entry_var.get() == "":
-                    entry_var.set(f"グループ_{group['group_num']:03d}")
 
     def _update_rename_preview(self):
         """リネーム例のプレビューを更新"""
@@ -1370,32 +1636,41 @@ class AutoSortDialog(tk.Toplevel):
 
     def _execute_selected(self):
         """チェックONのグループをモードに応じて実行"""
+        do_move = self.var_do_move.get()
+        do_rename = self.var_do_rename.get()
+
+        if not do_move and not do_rename:
+            self._set_status("実行モードを選択してください")
+            return
+
         selected = []
-        for group, var, entry_var in zip(self.all_groups, self._group_vars, self._group_entries):
+        for group, var, folder_var, word_var in zip(
+                self.all_groups, self._group_vars,
+                self._group_folder_entries, self._group_word_entries):
             if var.get():
-                group["label"] = entry_var.get()
+                group["folder_name"] = folder_var.get()
+                group["word"] = word_var.get()
                 selected.append(group)
 
         if not selected:
             self._set_status("グループが選択されていません")
             return
 
-        mode = self.var_mode.get()
-
-        # リネームモードで単語が空のグループをチェック
-        if mode == "rename":
-            empty = [g for g in selected if not g["label"].strip()]
+        # リネーム時に単語が空のグループをチェック
+        if do_rename:
+            empty = [g for g in selected if not g["word"].strip()]
             if empty:
                 self._set_status(f"単語が未入力のグループがあります ({len(empty)}件)")
                 return
 
         # 設定を保存
         self._exec_config = {
-            "mode": mode,
-            "position": self.var_position.get() if mode == "rename" else None,
-            "num_type": self.var_num_type.get() if mode == "rename" else None,
-            "digits": self.var_digits.get() if mode == "rename" else None,
-            "separator": self.var_separator.get() if mode == "rename" else None,
+            "do_move": do_move,
+            "do_rename": do_rename,
+            "position": self.var_position.get() if do_rename else None,
+            "num_type": self.var_num_type.get() if do_rename else None,
+            "digits": self.var_digits.get() if do_rename else None,
+            "separator": self.var_separator.get() if do_rename else None,
         }
 
         # 確認フレームを削除してログ表示に戻す
@@ -1425,41 +1700,49 @@ class AutoSortDialog(tk.Toplevel):
         self._thread.start()
 
     def _run_execute(self):
-        """選択グループの実行（フォルダ移動 or リネーム）"""
+        """選択グループの実行（フォルダ移動 / リネーム / 両方）"""
         try:
             config = self._exec_config
-            mode = config["mode"]
+            do_move = config["do_move"]
+            do_rename = config["do_rename"]
             done_groups = 0
             total_selected = len(self._selected_groups)
 
             for idx, group in enumerate(self._selected_groups):
                 if self.stop_flag:
                     break
-                label = group["label"]
-                members = group["members"]
+                members = list(group["members"])
 
-                if mode == "move":
-                    # フォルダに移動
-                    folder_name = label.strip() or f"グループ_{group['group_num']:03d}"
+                # フォルダに移動
+                if do_move:
+                    folder_name = (group.get("folder_name", "").strip()
+                                   or f"グループ_{group['group_num']:03d}")
                     group_folder = os.path.join(self.folder, folder_name)
                     os.makedirs(group_folder, exist_ok=True)
 
                     self._set_status(f"移動中... ({idx+1}/{total_selected})")
                     self._log(f"{folder_name}: {len(members)}枚")
 
+                    new_members = []
                     for fp in members:
                         if self.stop_flag:
                             break
                         try:
                             self.move_callback(fp, group_folder, refresh=False)
+                            new_members.append(os.path.join(
+                                group_folder, os.path.basename(fp)))
                         except TypeError:
                             self.move_callback(fp, group_folder)
+                            new_members.append(os.path.join(
+                                group_folder, os.path.basename(fp)))
                         except Exception as e:
                             self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
+                            new_members.append(fp)
+                    members = new_members
 
-                else:
-                    # リネーム
-                    word = label.strip()
+                # リネーム
+                if do_rename:
+                    word = (group.get("word", "").strip())
                     sep = config["separator"]
                     digits = config["digits"]
                     use_alpha = config["num_type"] == "alpha"
@@ -1496,7 +1779,12 @@ class AutoSortDialog(tk.Toplevel):
                 self._log(f"--- 停止: {done_groups}/{total_selected}グループ処理済み ---")
                 self._finish(stopped=True)
             else:
-                action = "移動" if mode == "move" else "リネーム"
+                actions = []
+                if do_move:
+                    actions.append("移動")
+                if do_rename:
+                    actions.append("リネーム")
+                action = "+".join(actions)
                 self._log(f"--- 完了: {done_groups}グループを{action}しました ---")
                 self._finish(stopped=False, group_count=done_groups,
                              isolated_count=0)
