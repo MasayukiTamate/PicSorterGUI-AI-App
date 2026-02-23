@@ -191,7 +191,9 @@ def execute_move(file_path, dest_folder, refresh=True):
         messagebox.showerror("エラー", f"ファイルを移動する権限がありません: {os.path.basename(file_path)}")
     except Exception as e:
         logger.error(f"ファイル移動エラー: {file_path} -> {dest_folder}", exc_info=True)
-        messagebox.showerror("失敗", f"移動中にエラー: {e}")
+        if messagebox.askyesno("失敗",
+                f"移動中にエラー: {e}\n\nエラーを報告しますか？"):
+            send_error_report(f"ファイル移動エラー: {file_path} -> {dest_folder}\n{e}")
 
 
 pic_controller.set_move_callback(execute_move)
@@ -320,6 +322,111 @@ def run_vector_update():
 config_menu.add_command(label="AIベクトルを更新・作成", command=run_vector_update)
 config_menu.add_command(label="AIモデル変更...", command=open_model_select_dialog)
 
+# ヘルプメニュー
+help_menu = tk.Menu(menubar, tearoff=0)
+menubar.add_cascade(label="ヘルプ(H)", menu=help_menu)
+
+FEEDBACK_EMAIL = "tamaya2473616@gmail.com"
+
+
+def open_send_message_dialog(subject_prefix="", body_prefix=""):
+    """メッセージ送信ダイアログを開く"""
+    import urllib.parse
+    import webbrowser
+    import traceback as tb_module
+
+    win = tk.Toplevel(koRoot)
+    win.title("メッセージを送信")
+    win.geometry("440x350")
+    win.attributes("-topmost", True)
+    win.resizable(True, True)
+    win.transient(koRoot)
+
+    tk.Label(win, text=f"送信先: {FEEDBACK_EMAIL}",
+             font=("MS Gothic", 8), fg="#888888").pack(anchor="w", padx=10, pady=(8, 0))
+
+    # 件名
+    tk.Label(win, text="件名:", font=("MS Gothic", 9)).pack(anchor="w", padx=10, pady=(8, 2))
+    var_subject = tk.StringVar(value=subject_prefix or "[PicSorterGUI] ")
+    tk.Entry(win, textvariable=var_subject, font=("MS Gothic", 9)).pack(
+        fill=tk.X, padx=10)
+
+    # 本文
+    tk.Label(win, text="本文:", font=("MS Gothic", 9)).pack(anchor="w", padx=10, pady=(8, 2))
+    txt_body = tk.Text(win, font=("MS Gothic", 9), height=10, wrap=tk.WORD)
+    txt_body.pack(fill=tk.BOTH, expand=True, padx=10)
+    if body_prefix:
+        txt_body.insert("1.0", body_prefix)
+
+    def send_via_mailto():
+        subject = var_subject.get()
+        body = txt_body.get("1.0", tk.END).strip()
+        if not body:
+            messagebox.showwarning("入力エラー", "本文を入力してください", parent=win)
+            return
+        params = urllib.parse.urlencode({"subject": subject, "body": body},
+                                        quote_via=urllib.parse.quote)
+        mailto_url = f"mailto:{FEEDBACK_EMAIL}?{params}"
+        try:
+            webbrowser.open(mailto_url)
+            win.destroy()
+        except Exception as e:
+            messagebox.showerror("エラー",
+                f"メールクライアントを開けませんでした:\n{e}", parent=win)
+
+    def copy_to_clipboard():
+        subject = var_subject.get()
+        body = txt_body.get("1.0", tk.END).strip()
+        text = f"To: {FEEDBACK_EMAIL}\nSubject: {subject}\n\n{body}"
+        win.clipboard_clear()
+        win.clipboard_append(text)
+        messagebox.showinfo("コピー完了",
+            "メール内容をクリップボードにコピーしました", parent=win)
+
+    btn_frame = tk.Frame(win)
+    btn_frame.pack(pady=(4, 8))
+    tk.Button(btn_frame, text="メールで送信", font=("MS Gothic", 9, "bold"),
+              command=send_via_mailto).pack(side=tk.LEFT, padx=4)
+    tk.Button(btn_frame, text="クリップボードにコピー", font=("MS Gothic", 9),
+              command=copy_to_clipboard).pack(side=tk.LEFT, padx=4)
+    tk.Button(btn_frame, text="閉じる", font=("MS Gothic", 9),
+              command=win.destroy).pack(side=tk.LEFT, padx=4)
+
+
+def send_error_report(error_info=""):
+    """エラー情報を含むメッセージ送信ダイアログを開く"""
+    import traceback
+    import platform
+
+    body = "--- エラー情報 ---\n"
+    body += f"OS: {platform.system()} {platform.release()}\n"
+    body += f"Python: {platform.python_version()}\n"
+    if error_info:
+        body += f"\n{error_info}\n"
+
+    # 最新のログファイルから末尾を取得
+    try:
+        from datetime import datetime
+        log_path = os.path.join("logs",
+            f"error_{datetime.now().strftime('%Y%m%d')}.log")
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            tail = lines[-30:] if len(lines) > 30 else lines
+            body += "\n--- 最近のログ ---\n"
+            body += "".join(tail)
+    except Exception:
+        pass
+
+    body += "\n--- ここに詳細を記入してください ---\n\n"
+    open_send_message_dialog(
+        subject_prefix="[PicSorterGUI] エラー報告",
+        body_prefix=body)
+
+
+help_menu.add_command(label="フィードバックを送る...", command=open_send_message_dialog)
+help_menu.add_command(label="エラーを報告する...", command=send_error_report)
+
 
 def run_visual_sort():
     try:
@@ -332,7 +439,9 @@ def run_visual_sort():
             open_visual_sort_window(target_path, app_state, execute_move, refresh_ui, koRoot)
     except Exception as e:
         logger.error(f"Visual Sort Launch Error: {e}")
-        messagebox.showerror("エラー", f"起動に失敗しました: {e}")
+        if messagebox.askyesno("エラー",
+                f"起動に失敗しました: {e}\n\nエラーを報告しますか？"):
+            send_error_report(f"Visual Sort Launch Error: {e}")
 
 
 def run_auto_sort():
