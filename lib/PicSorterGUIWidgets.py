@@ -1228,11 +1228,26 @@ class AutoSortDialog(tk.Toplevel):
                 hash_map = {}
                 vec_map = {}
 
+                start_time = time.time()
                 for i, path in enumerate(full_paths):
                     if self.stop_flag:
                         self._finish(stopped=True)
                         return
-                    self._set_status(f"ベクトル計算中... {i+1}/{total}")
+
+                    # 経過時間と推定残り時間
+                    elapsed = time.time() - start_time
+                    elapsed_str = self._format_elapsed(elapsed)
+                    if i > 0:
+                        avg = elapsed / i
+                        remaining = avg * (total - i)
+                        eta_str = self._format_elapsed(remaining)
+                        time_info = f" [{elapsed_str} / 残り約{eta_str}]"
+                    else:
+                        time_info = ""
+
+                    fname = os.path.basename(path)
+                    self._set_status(
+                        f"ベクトル計算中... {i+1}/{total} {fname}{time_info}")
                     try:
                         h = calculate_file_hash(path)
                         hash_map[path] = h
@@ -1244,6 +1259,9 @@ class AutoSortDialog(tk.Toplevel):
                             vec_map[h] = vectors[h]
                     except Exception as e:
                         self._log(f"スキップ: {os.path.basename(path)} ({e})")
+
+                total_elapsed = time.time() - start_time
+                self._log(f"ベクトル計算完了: {self._format_elapsed(total_elapsed)}")
 
                 try:
                     save_vectors(vectors)
@@ -1620,6 +1638,16 @@ class AutoSortDialog(tk.Toplevel):
         self.geometry("520x560")
         self._thread = threading.Thread(target=self._run_sort, daemon=True)
         self._thread.start()
+
+    def _format_elapsed(self, seconds):
+        """秒数を 分:秒 or 時:分:秒 の文字列に変換"""
+        s = int(seconds)
+        if s < 60:
+            return f"{s}秒"
+        elif s < 3600:
+            return f"{s // 60}分{s % 60:02d}秒"
+        else:
+            return f"{s // 3600}時間{(s % 3600) // 60:02d}分{s % 60:02d}秒"
 
     def _format_number(self, idx, digits, use_alpha):
         """ナンバリング文字列を生成"""
