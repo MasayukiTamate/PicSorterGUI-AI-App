@@ -821,6 +821,8 @@ class GroupDetailWindow(tk.Toplevel):
                   command=lambda: self._set_all(False)).pack(side=tk.LEFT, padx=4)
         tk.Button(btn_frame, text="適用して閉じる", font=("MS Gothic", 9, "bold"),
                   command=self._apply_and_close).pack(side=tk.LEFT, padx=(12, 4))
+        tk.Button(btn_frame, text="適用しないで閉じる", font=("MS Gothic", 8),
+                  command=self._close_without_apply).pack(side=tk.LEFT, padx=4)
 
     def _render_grid(self):
         """サムネイルグリッドを描画（サイズ変更・閾値変更時にも呼ばれる）"""
@@ -854,9 +856,12 @@ class GroupDetailWindow(tk.Toplevel):
                     img.thumbnail((size, size))
                     tk_img = ImageTk.PhotoImage(img)
                     self._thumb_refs.append(tk_img)
-                    lbl = tk.Label(cell, image=tk_img, bg="#ffffff")
+                    lbl = tk.Label(cell, image=tk_img, bg="#ffffff",
+                                   cursor="hand2")
                     lbl.pack()
                     lbl.bind("<MouseWheel>", self._mousewheel_handler)
+                    lbl.bind("<Button-1>",
+                             lambda e, p=path: self._preview_image(p))
             except Exception:
                 tk.Label(cell, text="?", bg="#eeeeee",
                          width=size // 8, height=size // 16).pack()
@@ -890,6 +895,59 @@ class GroupDetailWindow(tk.Toplevel):
 
         for c in range(cols):
             self._inner.columnconfigure(c, weight=1)
+
+    def _preview_image(self, path):
+        """画像をプレビュー表示"""
+        try:
+            img = Image.open(path)
+        except Exception:
+            return
+
+        win = tk.Toplevel(self)
+        win.title(os.path.basename(path))
+        win.attributes("-topmost", True)
+        win.resizable(True, True)
+        win._img_ref = None
+        win._orig_img = img
+
+        # 画面サイズを取得してプレビューの最大サイズを決定
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        max_w = int(screen_w * 0.8)
+        max_h = int(screen_h * 0.8)
+
+        # 初期表示サイズを計算
+        iw, ih = img.size
+        scale = min(max_w / iw, max_h / ih, 1.0)
+        disp_w, disp_h = int(iw * scale), int(ih * scale)
+
+        canvas = tk.Canvas(win, bg="#222222", highlightthickness=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        info_lbl = tk.Label(win, text=f"{os.path.basename(path)}  ({iw}x{ih})",
+                            font=("MS Gothic", 8), fg="#aaaaaa", bg="#333333",
+                            anchor="w", padx=6)
+        info_lbl.pack(fill=tk.X)
+
+        def show_image(w, h):
+            disp = img.copy()
+            disp.thumbnail((w, h), Image.LANCZOS)
+            tk_img = ImageTk.PhotoImage(disp)
+            win._img_ref = tk_img
+            canvas.delete("all")
+            canvas.create_image(w // 2, h // 2, image=tk_img)
+
+        win.geometry(f"{disp_w}x{disp_h + 20}")
+        win.after(50, lambda: show_image(disp_w, disp_h))
+
+        def _on_resize(event):
+            if event.widget == canvas:
+                show_image(event.width, event.height)
+        canvas.bind("<Configure>", _on_resize)
+
+        # クリックまたはEscで閉じる
+        win.bind("<Escape>", lambda e: win.destroy())
+        canvas.bind("<Button-1>", lambda e: win.destroy())
 
     def _resize_thumbnails(self, delta):
         """Ctrl+ホイールでサムネイルサイズ変更"""
@@ -996,11 +1054,15 @@ class GroupDetailWindow(tk.Toplevel):
         def _do_execute():
             try:
                 current_members = list(members)
+                move_count = 0
+                rename_count = 0
+                dest_folder_name = ""
 
                 # フォルダ移動
                 if mode in ("move", "both"):
                     group_folder = os.path.join(folder, folder_name)
                     os.makedirs(group_folder, exist_ok=True)
+                    dest_folder_name = folder_name
                     new_members = []
                     for i, fp in enumerate(current_members):
                         self.after(0, lambda i=i: prog_status.config(
@@ -1009,10 +1071,12 @@ class GroupDetailWindow(tk.Toplevel):
                             parent.move_callback(fp, group_folder, refresh=False)
                             new_members.append(os.path.join(
                                 group_folder, os.path.basename(fp)))
+                            move_count += 1
                         except TypeError:
                             parent.move_callback(fp, group_folder)
                             new_members.append(os.path.join(
                                 group_folder, os.path.basename(fp)))
+                            move_count += 1
                         except Exception:
                             new_members.append(fp)
                     current_members = new_members
@@ -1036,17 +1100,26 @@ class GroupDetailWindow(tk.Toplevel):
                             else:
                                 new_name = f"{stem}{sep}{word}{sep}{num}{ext}"
                             os.rename(fp, os.path.join(dirname, new_name))
+                            rename_count += 1
                         except Exception:
                             pass
 
                 if parent.refresh_callback:
                     self.after(0, lambda: parent.refresh_callback(parent.folder))
 
+                # 結果メッセージ組み立て
+                lines = [f"グループ {self.group['group_num']} の処理が完了しました\n"]
+                if dest_folder_name:
+                    lines.append(f"移動先: {dest_folder_name}")
+                if move_count:
+                    lines.append(f"移動: {move_count}枚")
+                if rename_count:
+                    lines.append(f"リネーム: {rename_count}枚")
+                result_msg = "\n".join(lines)
+
                 def _on_done():
                     prog.destroy()
-                    messagebox.showinfo(
-                        "完了", f"グループ {self.group['group_num']} の処理が完了しました",
-                        parent=self)
+                    messagebox.showinfo("完了", result_msg, parent=self)
                 self.after(0, _on_done)
             except Exception as e:
                 def _on_err():
@@ -1069,6 +1142,13 @@ class GroupDetailWindow(tk.Toplevel):
         if hasattr(self.parent_dialog, '_update_group_counts'):
             self.parent_dialog._update_group_counts()
 
+        self.destroy()
+
+    def _close_without_apply(self):
+        """変更を適用せずに閉じる（元のメンバーに戻す）"""
+        self.group["members"] = self._original_members
+        if hasattr(self.parent_dialog, '_update_group_counts'):
+            self.parent_dialog._update_group_counts()
         self.destroy()
 
     def _on_close(self):
@@ -1829,6 +1909,9 @@ class AutoSortDialog(tk.Toplevel):
 
             total_files = sum(len(g["members"]) for g in self._selected_groups)
             processed_files = 0
+            total_move_count = 0
+            total_rename_count = 0
+            folder_names = []
 
             for idx, group in enumerate(self._selected_groups):
                 if self.stop_flag:
@@ -1841,6 +1924,7 @@ class AutoSortDialog(tk.Toplevel):
                                    or f"グループ_{group['group_num']:03d}")
                     group_folder = os.path.join(self.folder, folder_name)
                     os.makedirs(group_folder, exist_ok=True)
+                    folder_names.append(folder_name)
 
                     self._set_status(f"移動中... ({idx+1}/{total_selected})")
                     self._log(f"{folder_name}: {len(members)}枚")
@@ -1857,10 +1941,12 @@ class AutoSortDialog(tk.Toplevel):
                             self.move_callback(fp, group_folder, refresh=False)
                             new_members.append(os.path.join(
                                 group_folder, os.path.basename(fp)))
+                            total_move_count += 1
                         except TypeError:
                             self.move_callback(fp, group_folder)
                             new_members.append(os.path.join(
                                 group_folder, os.path.basename(fp)))
+                            total_move_count += 1
                         except Exception as e:
                             self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
                             new_members.append(fp)
@@ -1898,6 +1984,7 @@ class AutoSortDialog(tk.Toplevel):
 
                             new_path = os.path.join(dirname, new_name)
                             os.rename(fp, new_path)
+                            total_rename_count += 1
                         except Exception as e:
                             self._log(f"  リネーム失敗: {os.path.basename(fp)} ({e})")
 
@@ -1912,15 +1999,28 @@ class AutoSortDialog(tk.Toplevel):
                 self._log(f"--- 停止: {done_groups}/{total_selected}グループ処理済み ---")
                 self._finish(stopped=True)
             else:
-                actions = []
-                if do_move:
-                    actions.append("移動")
-                if do_rename:
-                    actions.append("リネーム")
-                action = "+".join(actions)
-                self._log(f"--- 完了: {done_groups}グループを{action}しました ---")
+                # 結果メッセージ
+                lines = [f"{done_groups}グループの処理が完了しました\n"]
+                if folder_names:
+                    lines.append("移動先フォルダ:")
+                    for fn in folder_names:
+                        lines.append(f"  {fn}")
+                if total_move_count:
+                    lines.append(f"移動: {total_move_count}枚")
+                if total_rename_count:
+                    lines.append(f"リネーム: {total_rename_count}枚")
+                result_msg = "\n".join(lines)
+
+                self._log(f"--- 完了 ---")
+                if total_move_count:
+                    self._log(f"  移動: {total_move_count}枚")
+                if total_rename_count:
+                    self._log(f"  リネーム: {total_rename_count}枚")
                 self._finish(stopped=False, group_count=done_groups,
                              isolated_count=0)
+
+                self.after(0, lambda: messagebox.showinfo(
+                    "完了", result_msg, parent=self))
 
         except Exception as e:
             logger.error(f"仕分け実行エラー: {e}", exc_info=True)
