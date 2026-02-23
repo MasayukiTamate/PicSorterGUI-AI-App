@@ -1,7 +1,7 @@
 {
     "last_folder": "C:\\Teisyutubutu\\PicSorterGUI-AI-App",
     "geometries": {
-        "main": "320x218+1253+63",
+        "main": "320x335+1253+63",
         "folder": "",
         "file": ""
     },
@@ -40,6 +40,7 @@
         ],
         "ai_model": "mobilenet_v3_small",
         "custom_model_path": "",
-        "custom_model_arch": "mobilenet_v3_small"
+        "custom_model_arch": "mobilenet_v3_small",
+        "model_cache_dir": ""
     }
 }

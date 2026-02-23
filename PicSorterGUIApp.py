@@ -29,9 +29,9 @@ from PicSorterGUILogic import (
 from lib.PicSorterGUILib import GetKoFolder, GetGazoFiles
 from lib.PicSorterGUIState import get_app_state
 from lib.config_defaults import (
-    MOVE_DESTINATION_OPTIONS, AI_MODELS, DEFAULT_AI_MODEL,
+    AI_MODELS, DEFAULT_AI_MODEL,
 )
-from lib.PicSorterGUIWidgets import SplashWindow, ModelSelectDialog
+from lib.PicSorterGUIWidgets import SplashWindow, ModelSelectDialog, AutoSortDialog
 from lib.PicSorterGUIAI import VectorEngine, apply_model_cache_dir
 
 # --- アプリケーション状態の初期化 ---
@@ -239,8 +239,6 @@ def open_explorer():
 
 file_menu.add_command(label="エクスプローラーで開く(E)", command=open_explorer)
 file_menu.add_separator()
-file_menu.add_command(label="全ての画像を閉じる(R)", command=lambda: pic_controller.CloseAll())
-file_menu.add_separator()
 file_menu.add_command(label="終了(X)", command=on_closing_main)
 
 # 設定メニュー
@@ -293,19 +291,6 @@ def open_image_size_settings():
 
 
 config_menu.add_command(label="画像表示サイズ設定...", command=open_image_size_settings)
-
-# 移動先フォルダ数の設定
-count_var = tk.IntVar(value=app_state.move_dest_count)
-def change_move_count():
-    if not app_state.set_move_dest_count(count_var.get()):
-        messagebox.showerror("エラー", "無効な個数です")
-        count_var.set(app_state.move_dest_count)
-
-move_count_menu = tk.Menu(config_menu, tearoff=0)
-config_menu.add_cascade(label="移動先フォルダ数", menu=move_count_menu)
-for c in MOVE_DESTINATION_OPTIONS:
-    move_count_menu.add_radiobutton(label=f"{c}個", variable=count_var, value=c, command=change_move_count)
-
 config_menu.add_separator()
 
 # AIベクトル更新（旧ツールメニューから移動）
@@ -350,6 +335,19 @@ def run_visual_sort():
         messagebox.showerror("エラー", f"起動に失敗しました: {e}")
 
 
+def run_auto_sort():
+    """オート仕分け: フォルダを選択して全画像が群体/孤立になるまで自動処理"""
+    prev_state = koRoot.attributes("-topmost")
+    koRoot.attributes("-topmost", False)
+    path = filedialog.askdirectory(
+        title="自動仕分けするフォルダを選択してください",
+        initialdir=DEFOLDER
+    )
+    koRoot.attributes("-topmost", prev_state)
+    if path:
+        AutoSortDialog(koRoot, path, execute_move, refresh_ui)
+
+
 # --- メインウィンドウ UI (シンプル構成) ---
 
 # AI Visual Sort ボタン (メインアクション)
@@ -358,6 +356,13 @@ btn_visual_sort = tk.Button(koRoot, text="AI Visual Sort\n(視覚的仕分け)",
                             bg="#e8f0fe", font=("MS Gothic", 18, "bold"),
                             relief="groove", cursor="hand2", height=3)
 btn_visual_sort.pack(fill=tk.BOTH, padx=8, pady=(8, 4), expand=True)
+
+# オート仕分けボタン
+btn_auto = tk.Button(koRoot, text="オート仕分け (全自動グループ化)",
+                     command=run_auto_sort,
+                     bg="#fff3e0", font=("MS Gothic", 10, "bold"),
+                     relief="groove", cursor="hand2", height=1)
+btn_auto.pack(fill=tk.X, padx=8, pady=(0, 4))
 
 # --- 参照フォルダ管理エリア ---
 frame_ref_folders = tk.LabelFrame(koRoot, text="参照フォルダ", font=("MS Gothic", 9), padx=4, pady=4)
@@ -492,14 +497,10 @@ def on_ctrl_f(event):
     koRoot.attributes("-topmost", True)
     koRoot.focus_force()
 
-def on_ctrl_r(event):
-    pic_controller.CloseAll()
-
 def on_ctrl_e(event):
     open_explorer()
 
 koRoot.bind_all("<Control-f>", on_ctrl_f)
-koRoot.bind_all("<Control-r>", on_ctrl_r)
 koRoot.bind_all("<Control-e>", on_ctrl_e)
 
 

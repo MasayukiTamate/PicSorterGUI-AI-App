@@ -668,6 +668,280 @@ class SimilarityMoveDialog(tk.Toplevel):
                 pass
 
 
+class AutoSortDialog(tk.Toplevel):
+    """オート仕分けダイアログ: フォルダ内の全画像が群体/孤立になるまで自動処理する"""
+
+    def __init__(self, parent, folder, move_callback, refresh_callback):
+        super().__init__(parent)
+        self.title("オート仕分け")
+        self.geometry("460x480")
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        self.folder = folder
+        self.move_callback = move_callback
+        self.refresh_callback = refresh_callback
+        self.stop_flag = False
+        self._thread = None
+
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.transient(parent)
+        self.after(300, self._start)
+
+    def _build_ui(self):
+        tk.Label(self, text=f"フォルダ: {os.path.basename(self.folder)}",
+                 font=("MS Gothic", 10, "bold"), anchor="w", fg="#333333").pack(fill=tk.X, padx=12, pady=(10, 0))
+        tk.Label(self, text=self.folder, font=("MS Gothic", 8), anchor="w",
+                 fg="#888888", wraplength=430).pack(fill=tk.X, padx=12)
+
+        # 類似度しきい値
+        frame_thresh = tk.LabelFrame(self, text="類似度しきい値", font=("MS Gothic", 9), padx=8, pady=4)
+        frame_thresh.pack(fill=tk.X, padx=12, pady=(8, 0))
+
+        self.var_threshold = tk.DoubleVar(value=0.80)
+        self.lbl_thresh_val = tk.Label(frame_thresh, text="80%",
+                                       font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
+        self.lbl_thresh_val.pack(side=tk.RIGHT)
+        self.scale = tk.Scale(frame_thresh, variable=self.var_threshold,
+                              from_=0.5, to=1.0, resolution=0.01,
+                              orient=tk.HORIZONTAL, showvalue=False,
+                              command=lambda v: self.lbl_thresh_val.config(text=f"{float(v)*100:.0f}%"))
+        self.scale.pack(fill=tk.X, expand=True)
+
+        # 統計表示
+        frame_stats = tk.Frame(self, bd=1, relief=tk.SUNKEN, padx=10, pady=8)
+        frame_stats.pack(fill=tk.X, padx=12, pady=8)
+
+        def stat_col(label, color="#000000"):
+            f = tk.Frame(frame_stats)
+            f.pack(side=tk.LEFT, padx=(0, 20))
+            tk.Label(f, text=label, font=("MS Gothic", 8), fg="#666666").pack()
+            var = tk.StringVar(value="-")
+            tk.Label(f, textvariable=var, font=("MS Gothic", 13, "bold"), fg=color).pack()
+            return var
+
+        self.var_total     = stat_col("総数")
+        self.var_processed = stat_col("処理済")
+        self.var_groups    = stat_col("グループ", "#0055cc")
+        self.var_isolated  = stat_col("孤立", "#888888")
+
+        self.lbl_status = tk.Label(self, text="開始準備中...",
+                                   font=("MS Gothic", 9), fg="#0055aa", anchor="w")
+        self.lbl_status.pack(fill=tk.X, padx=12)
+
+        # ログ
+        frame_log = tk.Frame(self)
+        frame_log.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 0))
+        self.txt_log = tk.Text(frame_log, font=("MS Gothic", 8), state=tk.DISABLED,
+                               bg="#f8f8f8", relief=tk.SUNKEN, bd=1)
+        sb = tk.Scrollbar(frame_log, command=self.txt_log.yview)
+        self.txt_log.config(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # ボタン
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=10)
+        self.btn_stop = tk.Button(btn_frame, text="停止", width=10,
+                                  command=self._stop, font=("MS Gothic", 10))
+        self.btn_stop.pack(side=tk.LEFT, padx=5)
+        self.btn_close = tk.Button(btn_frame, text="閉じる", width=10,
+                                   command=self._on_close, font=("MS Gothic", 10),
+                                   state=tk.DISABLED)
+        self.btn_close.pack(side=tk.LEFT, padx=5)
+
+    def _log(self, msg):
+        def _do():
+            self.txt_log.config(state=tk.NORMAL)
+            self.txt_log.insert(tk.END, msg + "\n")
+            self.txt_log.see(tk.END)
+            self.txt_log.config(state=tk.DISABLED)
+        self.after(0, _do)
+
+    def _set_status(self, msg):
+        self.after(0, lambda: self.lbl_status.config(text=msg))
+
+    def _set_stats(self, **kwargs):
+        def _do():
+            if "total"     in kwargs: self.var_total.set(str(kwargs["total"]))
+            if "processed" in kwargs: self.var_processed.set(str(kwargs["processed"]))
+            if "groups"    in kwargs: self.var_groups.set(str(kwargs["groups"]))
+            if "isolated"  in kwargs: self.var_isolated.set(str(kwargs["isolated"]))
+        self.after(0, _do)
+
+    def _stop(self):
+        self.stop_flag = True
+        self.after(0, lambda: self.btn_stop.config(state=tk.DISABLED))
+        self._set_status("停止中...")
+        self._log("--- 停止要求を受け付けました ---")
+
+    def _start(self):
+        self.stop_flag = False
+        self.scale.config(state=tk.DISABLED)
+        self.btn_stop.config(state=tk.NORMAL)
+        self._thread = threading.Thread(target=self._run_sort, daemon=True)
+        self._thread.start()
+
+    def _on_close(self):
+        if self._thread and self._thread.is_alive():
+            self.stop_flag = True
+        self.destroy()
+
+    def _create_group_folder(self, group_num):
+        path = os.path.join(self.folder, f"グループ_{group_num:03d}")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _finish(self, stopped=False, group_count=0, isolated_count=0):
+        if stopped:
+            self._set_status("停止しました")
+            self._log("--- 処理を停止しました ---")
+        else:
+            msg = f"完了！ グループ: {group_count}件  孤立: {isolated_count}枚"
+            self._set_status(msg)
+            self._log(f"--- {msg} ---")
+
+        def _ui():
+            self.btn_stop.config(state=tk.DISABLED)
+            self.btn_close.config(state=tk.NORMAL)
+            self.scale.config(state=tk.NORMAL)
+        self.after(0, _ui)
+
+    def _run_sort(self):
+        try:
+            from PicSorterGUILogic import calculate_file_hash, load_vectors, save_vectors
+
+            self._set_status("画像を読み込み中...")
+            all_items = os.listdir(self.folder)
+            files = GetGazoFiles(all_items, self.folder)
+            total = len(files)
+
+            if total == 0:
+                self._set_status("画像がありません")
+                self._log("フォルダに対象画像がありませんでした")
+                self._finish()
+                return
+
+            self._set_stats(total=total, processed=0, groups=0, isolated=0)
+            self._log(f"対象画像: {total}枚")
+
+            self._set_status("AIモデルを準備中...")
+            engine = VectorEngine.get_instance()
+
+            try:
+                vectors = load_vectors()
+            except Exception:
+                vectors = {}
+
+            full_paths = [os.path.join(self.folder, f) for f in files]
+            hash_map = {}
+            vec_map = {}
+
+            for i, path in enumerate(full_paths):
+                if self.stop_flag:
+                    self._finish(stopped=True)
+                    return
+                self._set_status(f"ベクトル計算中... {i+1}/{total}")
+                try:
+                    h = calculate_file_hash(path)
+                    hash_map[path] = h
+                    if h not in vectors:
+                        vec = engine.get_image_feature(path)
+                        if vec:
+                            vectors[h] = vec
+                    if h in vectors:
+                        vec_map[h] = vectors[h]
+                except Exception as e:
+                    self._log(f"スキップ: {os.path.basename(path)} ({e})")
+
+            try:
+                save_vectors(vectors)
+            except Exception:
+                pass
+
+            threshold = self.var_threshold.get()
+            self._log(f"しきい値: {threshold*100:.0f}%  ベクトル計算済み: {len(vec_map)}枚")
+
+            # 貪欲クラスタリング
+            unprocessed = list(full_paths)
+            unprocessed_set = set(full_paths)
+            group_count = 0
+            isolated_count = 0
+            processed_count = 0
+
+            self._set_status("自動仕分け中...")
+
+            while unprocessed and not self.stop_flag:
+                # 先頭から処理済みをスキップ
+                while unprocessed and unprocessed[0] not in unprocessed_set:
+                    unprocessed.pop(0)
+                if not unprocessed:
+                    break
+
+                seed_path = unprocessed.pop(0)
+                unprocessed_set.discard(seed_path)
+
+                seed_hash = hash_map.get(seed_path)
+                if not seed_hash or seed_hash not in vec_map:
+                    isolated_count += 1
+                    processed_count += 1
+                    self._set_stats(processed=processed_count, isolated=isolated_count)
+                    continue
+
+                seed_vec = vec_map[seed_hash]
+
+                # 残り画像から類似するものを全て収集
+                similar_paths = []
+                for candidate in unprocessed:
+                    if candidate not in unprocessed_set:
+                        continue
+                    c_hash = hash_map.get(candidate)
+                    if not c_hash or c_hash not in vec_map:
+                        continue
+                    if engine.compare_features(seed_vec, vec_map[c_hash]) >= threshold:
+                        similar_paths.append(candidate)
+
+                processed_count += 1
+
+                if similar_paths:
+                    group_count += 1
+                    group_folder = self._create_group_folder(group_count)
+                    group_members = [seed_path] + similar_paths
+                    self._log(f"グループ {group_count}: {len(group_members)}枚 → グループ_{group_count:03d}")
+
+                    for fp in group_members:
+                        if self.stop_flag:
+                            break
+                        unprocessed_set.discard(fp)
+                        try:
+                            self.move_callback(fp, group_folder, refresh=False)
+                        except TypeError:
+                            self.move_callback(fp, group_folder)
+                        except Exception as e:
+                            self._log(f"  移動失敗: {os.path.basename(fp)} ({e})")
+
+                    processed_count += len(similar_paths)
+                    self._set_stats(processed=processed_count, groups=group_count)
+                else:
+                    isolated_count += 1
+                    self._set_stats(processed=processed_count, isolated=isolated_count)
+
+            if self.refresh_callback:
+                self.after(0, lambda: self.refresh_callback(self.folder))
+
+            if self.stop_flag:
+                self._finish(stopped=True)
+            else:
+                self._finish(stopped=False, group_count=group_count, isolated_count=isolated_count)
+
+        except Exception as e:
+            logger.error(f"オート仕分けエラー: {e}", exc_info=True)
+            self._set_status(f"エラー: {e}")
+            self._log(f"エラーが発生しました: {e}")
+            self.after(0, lambda: self.btn_close.config(state=tk.NORMAL))
+
+
 class SplashWindow(tk.Toplevel):
     """起動時のスプラッシュスクリーン"""
     def __init__(self, parent):
