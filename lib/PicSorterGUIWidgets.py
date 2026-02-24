@@ -2290,28 +2290,20 @@ class VisualSortWindow(tk.Toplevel):
         btn_refresh = tk.Button(self.frame_mid, text="更新 (Refresh)", bg="#eeeeee", command=self.on_refresh, **btn_config)
         btn_refresh.pack(side=tk.LEFT, padx=5)
 
-        dest_options = []
-        self.dest_index_map = {}
-        for i, d in enumerate(self.app_state.move_dest_list):
-            if d:
-                label = f"{i+1}: {os.path.basename(d)}"
-                dest_options.append(label)
-                self.dest_index_map[len(dest_options) - 1] = i
-
+        # 移動先フォルダ名入力（作成方式）
+        self._dest_history = []
         self.var_dest = tk.StringVar()
-        self._dest_style = ttk.Style()
-        self._dest_style.map("Dest.TCombobox",
-                             foreground=[("readonly", "black")])
+        btn_browse_dest = tk.Button(self.frame_mid, text="参照", font=("MS Gothic", 8),
+                                    command=self._browse_dest_folder)
+        btn_browse_dest.pack(side=tk.RIGHT, padx=(0, 5))
         self.combo_dest = ttk.Combobox(self.frame_mid, textvariable=self.var_dest,
-                                        values=dest_options, state="readonly", width=20,
-                                        style="Dest.TCombobox")
-        if dest_options:
-            self.combo_dest.current(0)
-        self.combo_dest.bind("<<ComboboxSelected>>", self._on_dest_changed)
-        self.combo_dest.pack(side=tk.RIGHT, padx=5)
-        self._update_dest_color()
+                                        font=("MS Gothic", 9), width=20,
+                                        values=self._dest_history)
+        self.combo_dest.pack(side=tk.RIGHT, padx=2)
+        self.combo_dest.bind("<Button-1>", lambda e:
+            self.combo_dest.config(values=self._dest_history))
 
-        tk.Label(self.frame_mid, text="移動先:", bg="#444444", fg="white").pack(side=tk.RIGHT)
+        tk.Label(self.frame_mid, text="移動先フォルダ名:", bg="#444444", fg="white").pack(side=tk.RIGHT, padx=(0, 2))
 
         btn_move = tk.Button(self.frame_mid, text="移動 (Move)", bg="#ccccff", command=lambda: self.execute_action("move"), **btn_config)
         btn_move.pack(side=tk.RIGHT, padx=5)
@@ -2639,20 +2631,13 @@ class VisualSortWindow(tk.Toplevel):
         for c in self.candidates:
             c['widget'].var_selected.set(False)
 
-    def _on_dest_changed(self, event=None):
-        self._update_dest_color()
-
-    def _update_dest_color(self):
-        combo_idx = self.combo_dest.current()
-        if combo_idx >= 0 and combo_idx in self.dest_index_map:
-            list_idx = self.dest_index_map[combo_idx]
-            path = self.app_state.move_dest_list[list_idx]
-            if path and os.path.exists(path):
-                self._dest_style.map("Dest.TCombobox",
-                                     foreground=[("readonly", "black")])
-            else:
-                self._dest_style.map("Dest.TCombobox",
-                                     foreground=[("readonly", "red")])
+    def _browse_dest_folder(self):
+        """参照ボタン: 既存フォルダを選択して移動先に設定"""
+        path = filedialog.askdirectory(
+            title="移動先フォルダを選択",
+            initialdir=os.path.dirname(self.target_file))
+        if path:
+            self.var_dest.set(path)
 
     def execute_action(self, action_type):
         targets = [c['path'] for c in self.candidates if c['widget'].var_selected.get()]
@@ -2663,8 +2648,19 @@ class VisualSortWindow(tk.Toplevel):
         if self.logic_callback:
             dest_path = None
             if action_type in ("move", "copy"):
-                combo_idx = self.combo_dest.current()
-                if combo_idx >= 0 and combo_idx in self.dest_index_map:
-                    list_idx = self.dest_index_map[combo_idx]
-                    dest_path = self.app_state.move_dest_list[list_idx]
+                dest_input = self.var_dest.get().strip()
+                if not dest_input:
+                    messagebox.showwarning("入力エラー",
+                        "移動先フォルダ名を入力してください", parent=self)
+                    return
+                # 絶対パスならそのまま、相対名なら対象画像のフォルダ内に作成
+                if os.path.isabs(dest_input):
+                    dest_path = dest_input
+                else:
+                    dest_path = os.path.join(
+                        os.path.dirname(self.target_file), dest_input)
+                os.makedirs(dest_path, exist_ok=True)
+                # 履歴に追加
+                if dest_input not in self._dest_history:
+                    self._dest_history.append(dest_input)
             self.logic_callback(action_type, targets, self, dest_path=dest_path)

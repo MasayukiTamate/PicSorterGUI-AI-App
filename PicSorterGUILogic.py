@@ -80,20 +80,16 @@ def open_visual_sort_window(target_path, app_state, move_callback, refresh_callb
             success_count = 0
 
             dest_root = None
-            if dest_path and os.path.exists(dest_path):
+            if dest_path:
+                os.makedirs(dest_path, exist_ok=True)
                 dest_root = dest_path
-            elif app_state.move_dest_list and len(app_state.move_dest_list) > 0:
-                 for d in app_state.move_dest_list:
-                     if d and os.path.exists(d):
-                         dest_root = d
-                         break
 
             if not file_list:
                 return
 
             if action_type == "move":
                 if not dest_root:
-                    messagebox.showerror("エラー", "移動先（登録フォルダ）が設定されていません。\nメイン画面の「Drop Folder Here」にフォルダを登録してください。")
+                    messagebox.showerror("エラー", "移動先フォルダが指定されていません。\nフォルダ名を入力してください。")
                     return
 
                 try:

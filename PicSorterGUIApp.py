@@ -531,7 +531,7 @@ btn_visual_sort = tk.Button(koRoot, text="AI Visual Sort\n(視覚的仕分け)",
 btn_visual_sort.pack(fill=tk.BOTH, padx=8, pady=(8, 4), expand=True)
 
 # オート仕分けボタン
-btn_auto = tk.Button(koRoot, text="オート仕分け (全自動グループ化)",
+btn_auto = tk.Button(koRoot, text="オート仕分け (半自動グループ化)",
                      command=run_auto_sort,
                      bg="#fff3e0", font=("MS Gothic", 10, "bold"),
                      relief="groove", cursor="hand2", height=1)
