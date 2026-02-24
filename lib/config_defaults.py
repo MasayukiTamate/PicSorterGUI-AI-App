@@ -140,7 +140,7 @@ def get_default_config():
             "file": ""
         },
         "settings": {
-            "topmost": True,
+            "topmost": False,
             "show_folder": False,
             "move_dest_list": [""] * MOVE_DESTINATION_SLOTS,
             "move_reg_idx": 0,

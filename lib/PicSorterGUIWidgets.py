@@ -31,7 +31,6 @@ class ModelSelectDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("AIモデル選択")
         self.geometry("540x640")
-        self.attributes("-topmost", True)
         self.resizable(False, False)
 
         self.on_select = on_select
@@ -182,13 +181,10 @@ class ModelSelectDialog(tk.Toplevel):
 
     def _browse_custom_file(self):
         """カスタム.pthファイルを選択"""
-        prev_topmost = self.attributes("-topmost")
-        self.attributes("-topmost", False)
         path = filedialog.askopenfilename(
             title="PyTorch重みファイル (.pth) を選択",
             filetypes=[("PyTorchモデルファイル", "*.pth *.pt"), ("全ファイル", "*.*")]
         )
-        self.attributes("-topmost", prev_topmost)
         if path:
             self._var_custom_path.set(path)
             self._custom_path = path
@@ -242,13 +238,10 @@ class ModelSelectDialog(tk.Toplevel):
 
     def _change_cache_dir(self):
         """格納フォルダ（TORCH_HOME）を変更する"""
-        prev_topmost = self.attributes("-topmost")
-        self.attributes("-topmost", False)
         new_torch_home = filedialog.askdirectory(
             title="モデルの格納フォルダ（TORCH_HOME）を選択",
             initialdir=self._pending_torch_home or os.path.expanduser("~")
         )
-        self.attributes("-topmost", prev_topmost)
         if not new_torch_home:
             return
 
@@ -446,7 +439,6 @@ class SimilarityMoveDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("スマート移動 - 準備中...")
         self.geometry("500x600")
-        self.attributes("-topmost", True)
 
         self.target_file = target_file
         self.dest_folder = dest_folder
@@ -695,7 +687,6 @@ class GroupDetailWindow(tk.Toplevel):
 
         self.title(f"グループ {group['group_num']} ({len(group['members'])}枚)")
         self.geometry("520x600")
-        self.attributes("-topmost", True)
         self.resizable(True, True)
         self.transient(parent_dialog)
 
@@ -740,6 +731,8 @@ class GroupDetailWindow(tk.Toplevel):
         thresh_frame = tk.Frame(self)
         thresh_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
         tk.Label(thresh_frame, text="閾値:", font=("MS Gothic", 9)).pack(side=tk.LEFT)
+        tk.Label(thresh_frame, text="(←→キーで操作)",
+                 font=("MS Gothic", 7), fg="#999999").pack(side=tk.LEFT, padx=(4, 0))
         self._var_threshold = tk.DoubleVar(value=self._parent_threshold)
         self._lbl_thresh_val = tk.Label(thresh_frame,
                                         text=f"{self._parent_threshold*100:.0f}%",
@@ -751,6 +744,18 @@ class GroupDetailWindow(tk.Toplevel):
                                orient=tk.HORIZONTAL, showvalue=False,
                                command=self._on_threshold_change)
         self._scale.pack(fill=tk.X, expand=True)
+
+        # 左右キーでスライダー操作
+        def _on_left(event):
+            v = max(0.10, self._var_threshold.get() - 0.01)
+            self._var_threshold.set(round(v, 2))
+            self._on_threshold_change(str(v))
+        def _on_right(event):
+            v = min(1.0, self._var_threshold.get() + 0.01)
+            self._var_threshold.set(round(v, 2))
+            self._on_threshold_change(str(v))
+        self.bind("<Left>", _on_left)
+        self.bind("<Right>", _on_right)
 
         # サムネイル一覧（スクロール可能）
         self._list_frame = tk.Frame(self, bd=1, relief=tk.SUNKEN)
@@ -921,19 +926,10 @@ class GroupDetailWindow(tk.Toplevel):
             sim = self._all_similarities.get(path)
             sim_text = f" ({sim*100:.0f}%)" if sim is not None and path != self._seed_path else ""
 
-            # ファイル名 + 類似度 + チェックボックス（名前の後に配置）
+            # チェックボックス + ファイル名 + 類似度（チェックを先頭に配置）
             name_row = tk.Frame(cell, bg="#ffffff")
             name_row.pack(fill=tk.X)
             name_row.bind("<MouseWheel>", self._mousewheel_handler)
-
-            name = os.path.basename(path)
-            if len(name) > max_name_len:
-                name = name[:max_name_len - 3] + "..."
-            lbl_name = tk.Label(name_row, text=name + sim_text,
-                                font=("MS Gothic", 7),
-                                bg="#ffffff", fg="#666666")
-            lbl_name.pack(side=tk.LEFT)
-            lbl_name.bind("<MouseWheel>", self._mousewheel_handler)
 
             # チェック状態: パスが以前あればその状態を引き継ぎ、新規はTrue
             default_checked = old_check_map.get(path, True)
@@ -943,6 +939,15 @@ class GroupDetailWindow(tk.Toplevel):
                                 activebackground="#ffffff",
                                 command=self._update_count)
             cb.pack(side=tk.LEFT)
+
+            name = os.path.basename(path)
+            if len(name) > max_name_len:
+                name = name[:max_name_len - 3] + "..."
+            lbl_name = tk.Label(name_row, text=name + sim_text,
+                                font=("MS Gothic", 7),
+                                bg="#ffffff", fg="#666666")
+            lbl_name.pack(side=tk.LEFT)
+            lbl_name.bind("<MouseWheel>", self._mousewheel_handler)
 
         for c in range(cols):
             self._inner.columnconfigure(c, weight=1)
@@ -956,7 +961,6 @@ class GroupDetailWindow(tk.Toplevel):
 
         win = tk.Toplevel(self)
         win.title(os.path.basename(path))
-        win.attributes("-topmost", True)
         win.resizable(True, True)
         win._img_ref = None
         win._orig_img = img
@@ -1087,12 +1091,14 @@ class GroupDetailWindow(tk.Toplevel):
         if mode in ("move", "both") and not folder_name:
             folder_name = f"グループ_{self.group['group_num']:03d}"
 
-        # 処理中ダイアログ
+        # 処理中ダイアログ（画面中央に配置）
         prog = tk.Toplevel(self)
         prog.title("処理中")
-        prog.geometry("300x80")
+        pw, ph = 300, 80
+        sx = self.winfo_screenwidth() // 2 - pw // 2
+        sy = self.winfo_screenheight() // 2 - ph // 2
+        prog.geometry(f"{pw}x{ph}+{sx}+{sy}")
         prog.resizable(False, False)
-        prog.attributes("-topmost", True)
         prog.transient(self)
         prog.grab_set()
         prog_label = tk.Label(prog, text="処理中...", font=("MS Gothic", 10))
@@ -1232,7 +1238,6 @@ class AutoSortDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("オート仕分け")
         self.geometry("520x560")
-        self.attributes("-topmost", True)
         self.resizable(True, True)
         self.minsize(400, 400)
 
@@ -1266,6 +1271,9 @@ class AutoSortDialog(tk.Toplevel):
         frame_thresh = tk.LabelFrame(self, text="類似度しきい値", font=("MS Gothic", 9), padx=8, pady=4)
         frame_thresh.pack(fill=tk.X, padx=12, pady=(8, 0))
 
+        tk.Label(frame_thresh, text="←→キーで操作可能",
+                 font=("MS Gothic", 7), fg="#999999").pack(anchor="w")
+
         self.var_threshold = tk.DoubleVar(value=0.60)
         self.lbl_thresh_val = tk.Label(frame_thresh, text="60%",
                                        font=("MS Gothic", 10, "bold"), width=5, fg="#0055cc")
@@ -1275,6 +1283,18 @@ class AutoSortDialog(tk.Toplevel):
                               orient=tk.HORIZONTAL, showvalue=False,
                               command=lambda v: self.lbl_thresh_val.config(text=f"{float(v)*100:.0f}%"))
         self.scale.pack(fill=tk.X, expand=True)
+
+        # 左右キーでスライダー操作
+        def _on_left(event):
+            v = max(0.20, self.var_threshold.get() - 0.01)
+            self.var_threshold.set(round(v, 2))
+            self.lbl_thresh_val.config(text=f"{v*100:.0f}%")
+        def _on_right(event):
+            v = min(1.0, self.var_threshold.get() + 0.01)
+            self.var_threshold.set(round(v, 2))
+            self.lbl_thresh_val.config(text=f"{v*100:.0f}%")
+        self.bind("<Left>", _on_left)
+        self.bind("<Right>", _on_right)
 
         # 統計表示
         frame_stats = tk.Frame(self, bd=1, relief=tk.SUNKEN, padx=10, pady=8)
@@ -1697,6 +1717,9 @@ class AutoSortDialog(tk.Toplevel):
         self._group_folder_entries = []
         self._group_word_entries = []
         self._group_checkbuttons = []
+        self._group_pickup_frames = []  # ピックアップ表示フレーム
+        self._group_pickup_vars = []    # ピックアップ表示チェック
+        self._group_pickup_refs = []    # サムネイル参照保持
         for group in self.all_groups:
             var = tk.BooleanVar(value=True)
             self._group_vars.append(var)
@@ -1739,11 +1762,26 @@ class AutoSortDialog(tk.Toplevel):
                          cb.config(values=self._word_history))
             self._group_word_entries.append(word_var)
 
+            # ピックアップ表示チェック
+            pickup_var = tk.BooleanVar(value=False)
+            self._group_pickup_vars.append(pickup_var)
+            idx = len(self._group_pickup_vars) - 1
+            tk.Checkbutton(row, text="Top10", variable=pickup_var,
+                           bg="#f0f4ff", activebackground="#f0f4ff",
+                           font=("MS Gothic", 7),
+                           command=lambda i=idx: self._toggle_pickup(i)
+                           ).pack(side=tk.LEFT, padx=(2, 0))
+
             # 詳細ボタン
             btn_detail = tk.Button(row, text="詳細", font=("MS Gothic", 8),
                                    command=lambda g=group: self._open_group_detail(g),
                                    bg="#dde4f0", relief=tk.FLAT, cursor="hand2")
             btn_detail.pack(side=tk.RIGHT, padx=(0, 4), pady=2)
+
+            # ピックアップフレーム（初期非表示）
+            pickup_frame = tk.Frame(self._inner_frame, bg="#e8ecf8")
+            self._group_pickup_frames.append(pickup_frame)
+            self._group_pickup_refs.append([])
 
             # 行内の全ウィジェットにホイールバインド
             self._bind_wheel_recursive(row, self._confirm_wheel_handler)
@@ -1818,6 +1856,100 @@ class AutoSortDialog(tk.Toplevel):
             if var.get():
                 total += len(group["members"])
         self.btn_action.config(text=f"実行 ({total}枚)")
+
+    def _toggle_pickup(self, idx):
+        """グループのピックアップ表示をトグル"""
+        if idx >= len(self._group_pickup_frames):
+            return
+        frame = self._group_pickup_frames[idx]
+        if self._group_pickup_vars[idx].get():
+            self._render_pickup(idx)
+        else:
+            frame.pack_forget()
+
+    def _render_pickup(self, idx):
+        """グループのTop10類似画像をサムネイル表示"""
+        if idx >= len(self.all_groups):
+            return
+        frame = self._group_pickup_frames[idx]
+        frame.pack_forget()
+        for w in frame.winfo_children():
+            w.destroy()
+        self._group_pickup_refs[idx] = []
+
+        group = self.all_groups[idx]
+        cache = self._vec_cache
+        if not cache:
+            return
+
+        seed_path = group["members"][0] if group["members"] else None
+        if not seed_path:
+            return
+
+        hash_map = cache["hash_map"]
+        vec_map = cache["vec_map"]
+        engine = cache["engine"]
+        seed_hash = hash_map.get(seed_path)
+        if not seed_hash or seed_hash not in vec_map:
+            return
+        seed_vec = vec_map[seed_hash]
+
+        # 全画像との類似度を計算し上位10件を取得
+        sims = []
+        for path, h in hash_map.items():
+            if path == seed_path:
+                continue
+            if h in vec_map:
+                sim = engine.compare_features(seed_vec, vec_map[h])
+                sims.append((path, sim))
+        sims.sort(key=lambda x: x[1], reverse=True)
+        top10 = sims[:10]
+
+        if not top10:
+            tk.Label(frame, text="類似画像なし", font=("MS Gothic", 8),
+                     bg="#e8ecf8", fg="#888888").pack(padx=4, pady=2)
+            # グループ行の直後に表示
+            self._pack_pickup_after_group(idx)
+            return
+
+        tk.Label(frame, text=f"Top10 類似画像 (シード: {os.path.basename(seed_path)})",
+                 font=("MS Gothic", 7), bg="#e8ecf8", fg="#555555",
+                 anchor="w").pack(fill=tk.X, padx=4, pady=(2, 0))
+
+        thumb_row = tk.Frame(frame, bg="#e8ecf8")
+        thumb_row.pack(fill=tk.X, padx=4, pady=2)
+
+        for path, sim in top10:
+            cell = tk.Frame(thumb_row, bg="#e8ecf8")
+            cell.pack(side=tk.LEFT, padx=1)
+            try:
+                with Image.open(path) as img:
+                    img.thumbnail((50, 50))
+                    tk_img = ImageTk.PhotoImage(img)
+                    self._group_pickup_refs[idx].append(tk_img)
+                    lbl = tk.Label(cell, image=tk_img, bg="#e8ecf8")
+                    lbl.pack()
+            except Exception:
+                tk.Label(cell, text="?", bg="#ddd", width=6, height=3).pack()
+            tk.Label(cell, text=f"{sim*100:.0f}%", font=("MS Gothic", 6),
+                     bg="#e8ecf8", fg="#666666").pack()
+
+        # グループ行の直後に表示
+        self._pack_pickup_after_group(idx)
+        self._bind_wheel_recursive(frame, self._confirm_wheel_handler)
+
+    def _pack_pickup_after_group(self, idx):
+        """ピックアップフレームをグループ行の直後にpack"""
+        frame = self._group_pickup_frames[idx]
+        # inner_frame の子ウィジェットからグループ行を探し、その直後にpack
+        children = self._inner_frame.pack_slaves()
+        # グループ行は pack順で 2*idx 番目 (row, [pickup])
+        # 対応する行を見つけてその後にpack
+        group_rows = [w for w in children if w not in self._group_pickup_frames]
+        if idx < len(group_rows):
+            frame.pack(fill=tk.X, padx=6, pady=(0, 2), after=group_rows[idx])
+        else:
+            frame.pack(fill=tk.X, padx=6, pady=(0, 2))
 
     def _open_group_detail(self, group):
         """グループ詳細ウィンドウを開く"""
@@ -1945,12 +2077,14 @@ class AutoSortDialog(tk.Toplevel):
         self.stop_flag = False
         self.geometry("520x560")
 
-        # 処理中ダイアログ
+        # 処理中ダイアログ（画面中央に配置）
         self._prog_dialog = tk.Toplevel(self)
         self._prog_dialog.title("処理中")
-        self._prog_dialog.geometry("320x100")
+        pw, ph = 320, 100
+        sx = self.winfo_screenwidth() // 2 - pw // 2
+        sy = self.winfo_screenheight() // 2 - ph // 2
+        self._prog_dialog.geometry(f"{pw}x{ph}+{sx}+{sy}")
         self._prog_dialog.resizable(False, False)
-        self._prog_dialog.attributes("-topmost", True)
         self._prog_dialog.transient(self)
         self._prog_dialog.grab_set()
         self._prog_dialog.protocol("WM_DELETE_WINDOW", lambda: None)
@@ -2137,7 +2271,6 @@ class SplashWindow(tk.Toplevel):
         self.geometry('%dx%d+%d+%d' % (w, h, x, y))
         self.overrideredirect(True)
         self.configure(bg='#2b2b2b')
-        self.attributes("-topmost", True)
         self.attributes("-alpha", 0.0)
 
         self.canvas = tk.Canvas(self, width=w, height=h, bg="#2b2b2b", highlightthickness=0)

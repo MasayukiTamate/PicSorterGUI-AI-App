@@ -51,8 +51,6 @@ def close_splash():
     try:
         splash.close()
         koRoot.deiconify()
-        if app_state.topmost:
-            koRoot.attributes("-topmost", True)
     except:
         pass
     # スプラッシュ後にモデル確認
@@ -165,13 +163,11 @@ def refresh_ui(new_path):
 
 
 # --- メイン処理 ---
-koRoot.attributes("-topmost", True)
 koRoot.title("PicSorterGUI")
 
 # 実体生成
 data_manager = ImageDataManager(DEFOLDER)
 pic_controller = PicController(koRoot, DEFOLDER)
-koRoot.attributes("-topmost", app_state.topmost)
 
 
 def execute_move(file_path, dest_folder, refresh=True):
@@ -203,7 +199,6 @@ pic_controller.set_refresh_callback(refresh_ui)
 def on_closing_main():
     try:
         app_state.set_window_geometry("main", koRoot.winfo_geometry())
-        app_state.set_topmost(koRoot.attributes("-topmost"))
 
         config_to_save = app_state.to_dict()
         save_config(config_to_save["last_folder"], config_to_save["geometries"], config_to_save["settings"])
@@ -217,10 +212,7 @@ def on_closing_main():
 
 
 def safe_select_folder():
-    prev_state = koRoot.attributes("-topmost")
-    koRoot.attributes("-topmost", False)
     path = filedialog.askdirectory(title="画像フォルダを選択してください")
-    koRoot.attributes("-topmost", prev_state)
     return path
 
 
@@ -246,14 +238,12 @@ file_menu.add_command(label="終了(X)", command=on_closing_main)
 # 設定メニュー
 config_menu = tk.Menu(menubar, tearoff=0)
 menubar.add_cascade(label="設定(S)", menu=config_menu)
-config_menu.add_command(label="常に最前面(T) ON/OFF", command=lambda: koRoot.attributes("-topmost", not koRoot.attributes("-topmost")))
 config_menu.add_separator()
 
 # 画像表示サイズ設定ダイアログ
 def open_image_size_settings():
     win = tk.Toplevel(koRoot)
     win.title("画像表示サイズ設定")
-    win.attributes("-topmost", True)
 
     min_w = tk.IntVar(value=app_state.image_min_width)
     min_h = tk.IntVar(value=app_state.image_min_height)
@@ -338,7 +328,6 @@ def open_send_message_dialog(subject_prefix="", body_prefix="", attach_log=False
     win = tk.Toplevel(koRoot)
     win.title("メッセージを送信")
     win.geometry("480x420")
-    win.attributes("-topmost", True)
     win.resizable(True, True)
     win.transient(koRoot)
 
@@ -510,13 +499,10 @@ def run_visual_sort():
 
 def run_auto_sort():
     """オート仕分け: フォルダを選択して全画像が群体/孤立になるまで自動処理"""
-    prev_state = koRoot.attributes("-topmost")
-    koRoot.attributes("-topmost", False)
     path = filedialog.askdirectory(
         title="自動仕分けするフォルダを選択してください",
         initialdir=DEFOLDER
     )
-    koRoot.attributes("-topmost", prev_state)
     if path:
         AutoSortDialog(koRoot, path, execute_move, refresh_ui)
 
@@ -587,10 +573,7 @@ def refresh_ref_folder_ui():
 
 
 def add_reference_folder():
-    prev_state = koRoot.attributes("-topmost")
-    koRoot.attributes("-topmost", False)
     path = filedialog.askdirectory(title="参照フォルダを選択")
-    koRoot.attributes("-topmost", prev_state)
     if path:
         if app_state.add_reference_folder(path):
             save_ref_folders()
@@ -648,11 +631,8 @@ def set_move_dest_folder(path):
 
 
 def browse_move_dest():
-    prev_state = koRoot.attributes("-topmost")
-    koRoot.attributes("-topmost", False)
     path = filedialog.askdirectory(title="移動先フォルダを選択",
                                    initialdir=app_state.move_dest_folder or DEFOLDER)
-    koRoot.attributes("-topmost", prev_state)
     if path:
         set_move_dest_folder(path)
 
@@ -739,7 +719,6 @@ except Exception as e:
 
 # --- キーバインド ---
 def on_ctrl_f(event):
-    koRoot.attributes("-topmost", True)
     koRoot.focus_force()
 
 def on_ctrl_e(event):

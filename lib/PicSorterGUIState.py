@@ -37,7 +37,7 @@ class AppState:
         # UI 表示設定
         self.show_folder_window = False
         self.show_file_window = False
-        self.topmost = True
+        self.topmost = False
 
         # スマート移動設定
         self.smart_move_threshold = 0.90
@@ -292,7 +292,7 @@ class AppState:
 
             if "settings" in data:
                 settings = data["settings"]
-                self.topmost = settings.get("topmost", True)
+                self.topmost = settings.get("topmost", False)
                 self.show_folder_window = settings.get("show_folder", False)
                 self.show_file_window = settings.get("show_file", False)
 

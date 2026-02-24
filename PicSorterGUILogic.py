@@ -262,7 +262,6 @@ class PicController():
             win = tk.Toplevel(self.parent)
             display_name = os.path.basename(fileName) if os.path.sep in fileName or os.path.altsep in fileName else fileName
             win.title(f"{display_name} ({int(scale*100)}%)")
-            win.attributes("-topmost", True)
             self.open_windows[fullName] = win
 
             def on_img_close():
@@ -362,7 +361,4 @@ class PicController():
             print(f"画像表示エラー: {e}")
 
     def disable_all_topmost(self):
-        for win in self.open_windows.values():
-            try:
-                win.attributes("-topmost", False)
-            except: pass
+        pass
